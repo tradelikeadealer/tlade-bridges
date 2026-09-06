@@ -48,10 +48,28 @@ Open an ES or NQ chart in NT8, add the `TLAdeBridge` indicator.
 
 ### 3. Run the receiver
 
+`tlade_bridge_nt8.py` is the file you downloaded with this bridge — it stays
+wherever you saved it (usually your **Downloads** folder). Python only looks in
+the folder the command prompt is currently in, so open the prompt **in that
+folder**, not in your user directory:
+
+1. Open File Explorer and go to the folder containing `tlade_bridge_nt8.py`
+2. Click the address bar at the top, type `cmd`, press Enter
+3. A command prompt opens already pointing at that folder
+
+Then run:
+
 ```bash
 pip install flask flask-cors
 python tlade_bridge_nt8.py
 ```
+
+Leave that window open while you trade — closing it stops the bridge.
+
+> **`No such file or directory`?** You are in the wrong folder. The prompt shows
+> which one you are in (e.g. `C:\Users\yourname>`); it must be the folder that
+> holds the script. Running as administrator does not help — it is not a
+> permissions problem.
 
 ### 4. Open TLADe
 

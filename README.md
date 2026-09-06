@@ -41,7 +41,6 @@ TLADe team.
 | [TradingView Pine](bridges/) (in repo terminal/TV-Indicators/) | **Ready** | Pine v6 indicators for ES/SPX/SPY and NQ/NDX/QQQ — published on TradingView | Pine |
 | [Interactive Brokers](bridges/ib/) | **Ready** | TWS / IB Gateway | Python |
 | [Rithmic](bridges/rithmic/) | **Ready** | R\|Protocol direct (Apex, TopstepTrader, Bulenox, Earn2Trade + 12 other prop firms) | Python |
-| [NinjaTrader 8 bridge](bridges/ninjatrader/) | **Beta** | Rithmic, CQG, Kinetick (via NT8) | C# + Python |
 
 ### Community-contributed (TLADe-patched)
 
@@ -54,9 +53,26 @@ credit; the root-level source is the TLADe-patched build. See
 
 | Integration | Status | Surface | Contributor |
 |---|---|---|---|
+| [NinjaTrader 8](bridges/ninjatrader/) | **Beta** | NT8 chart indicator + local receiver (Rithmic, CQG, Kinetick via NT8) | Kris (C# + Python) |
 | [ATAS](bridges/atas/) | **Ready** | ATAS Platform — Bridge + GEX Dashboard + Quantum Field Ladder (Rithmic / CQG via ATAS data) | Mihai (C# + Python) |
 | [MotiveWave](bridges/motivawe/) | **Ready (cross-OS, MW Java 25+)** | TLADe levels overlay on MotiveWave charts. Single jar for macOS, Windows and Linux. | Herat Acharya (Java) |
 | [CQG](bridges/cqg/) | Wanted | CQG API direct | — |
+
+### Independent versions
+
+Anyone can build their own version of any indicator here and publish it under
+their own name — the MIT licence allows it and no permission from us is needed.
+Those versions are **not reviewed by TLADe**: we don't test them, we don't keep
+them in sync with the data format, and we can't support them. Use them at your
+own discretion, and take questions to whoever wrote them.
+
+If you publish one and would like it listed below so users can find it, open an
+issue with the link and a couple of lines on what's different. We'll add the row —
+listing is not an endorsement.
+
+| Version | Platform | Author | Notes |
+|---|---|---|---|
+| _(none listed yet)_ | | | |
 
 ## Build Your Own Bridge
 
@@ -66,12 +82,46 @@ See [`templates/bridge_template.py`](templates/bridge_template.py) for a minimal
 
 ## Contributing
 
-We welcome community bridges! If you have access to a data feed that isn't covered:
+There are three ways to contribute, and you can pick whichever suits you.
+
+**Improve an existing integration.** Fork, make your changes, open a pull
+request. We read them; if a change makes the integration better for everyone,
+it goes into the TLADe-patched build and you are credited in the table above.
+
+**Publish your own version.** You don't need our permission — MIT lets you fork,
+rename and publish under your own name, and support it yourself. Open an issue
+if you want it listed under *Independent versions* so users can find it.
+
+**Build a bridge for a feed nobody covers yet.**
 
 1. Read the [Bridge Protocol Spec](protocol/BRIDGE_SPEC.md)
 2. Use the [template](templates/bridge_template.py) as a starting point
 3. Test with your TLADe terminal (it auto-detects `localhost:5000/health`)
 4. Open a PR
+
+### How your work is treated
+
+If you publish an integration here, it stays **yours**. We list it, we point
+users to it, and we say who wrote it — but we don't take it over.
+
+If at some point we want to modify it — because the data format changed, or a
+fix benefits every user — **we ask you first**. If you agree, the patched build
+moves into the TLADe-maintained set: we take on the data feed and keep it in
+sync, and you stay credited as its author, with your original preserved in the
+integration's `original/` folder. If you'd rather keep it independent, that's
+fine too — nothing changes.
+
+### What TLADe guarantees
+
+For the integrations in the two tables at the top — TLADe-built and
+TLADe-patched — we guarantee **the data feed behind them**: the levels they
+receive are the same levels the terminal shows, and we keep them in sync when
+the payload format changes. What we do not cover is how a platform we don't
+trade on renders them: chart behaviour, drawing quirks and platform-specific
+bugs stay with the code's author, who is credited in the table.
+
+For everything under *Independent versions*, we guarantee nothing — we haven't
+looked at it.
 
 ## Requirements
 
