@@ -41,6 +41,7 @@ TLADe team.
 | [TradingView Pine](bridges/) (in repo terminal/TV-Indicators/) | **Ready** | Pine v6 indicators for ES/SPX/SPY and NQ/NDX/QQQ — published on TradingView | Pine |
 | [Interactive Brokers](bridges/ib/) | **Ready** | TWS / IB Gateway | Python |
 | [Rithmic](bridges/rithmic/) | **Ready** | R\|Protocol direct (Apex, TopstepTrader, Bulenox, Earn2Trade + 12 other prop firms) | Python |
+| [Rithmic — Bulenox fix](https://github.com/tradelikeadealer/tlade-bridges/releases/tag/rithmic-bulenox-fix) | **Variant** | Same bridge, logs into the market-data and history plants only. For Bulenox and any Rithmic login that answers `rpCode 13 permission denied` on the order plant. | Python |
 
 ### Community-contributed (TLADe-patched)
 
