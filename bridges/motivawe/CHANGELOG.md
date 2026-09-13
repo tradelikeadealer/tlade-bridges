@@ -1,5 +1,24 @@
 # CHANGELOG — MotiveWave Indicator
 
+## 2026-09-13 — Release 3.5.0: the canonical set
+
+`TLADeGexDashboard.java` brought to the same feature set as the TradingView
+indicator 3.5.0 and frozen there (bug fixes only from now on):
+
+- One name per level (Call Wall, Put Wall, Zero Gamma, Max Pain, EM High/Low
+  Globex and RTH, Vol High/Low, Charm Magnet, Delta Flip); TradingView palette.
+- Wall flip on two consecutive 5-minute closes through the wall: colour by
+  nature, width minus one, `↺` marker.
+- Breakout structure on closed bars (M / W / D / H4 / H1), invalidated by an
+  opposite bar of the same timeframe closing through it; keep N per timeframe.
+- Confluence zones sized as a percentage of the Expected Move (default 7%).
+- Session AVWAPs with labels, session boxes (Asia / Europe / Pre / US RTH).
+- Level-cross signals (walls, system levels, breakouts) via MotiveWave signals.
+- Silent above 1H unless "Draw on timeframes above 1H" is on.
+- Defaults aligned with TradingView: walls, system levels, Delta Flip, profile,
+  AVWAP on; structure, Charm, boxes, confluence, breakouts, alerts off.
+
+Previous jar (v1.3.4) kept on the GitHub release `indicators-pre-3.5`.
 ## 2026-07-02 — Fetch error surfacing + delayed workspace-open kick (v1.3.4)
 
 Two changes on `TLADeGexDashboard.java`, both diagnostic and both

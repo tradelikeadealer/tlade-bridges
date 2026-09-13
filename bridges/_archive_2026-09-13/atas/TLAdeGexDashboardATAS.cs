@@ -36,10 +36,6 @@
 //    PDH/PDL/PWH/PWL=Structure
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// TLADe GEX Levels — ATAS — release 3.5.0 (13 September 2026)
-// Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
-// rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
-// confluence zones (% of EM), profile bars, themes, silent above 1H, level-cross alerts.
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
@@ -80,23 +76,6 @@ namespace ATAS.Indicators.Technical
         // tutti gli slot dello stesso giorno e va al successivo "futures day".
         // 125=02:05 EU, 485=08:05 PRE, 575=09:35 RTH, 635=10:35 OR, 785=13:05 CLOSE, 1085=18:05 ASIA.
         private static readonly int[] FETCH_MINUTES_ET = { 125, 485, 575, 635, 785, 1085 };
-
-        // profile (P:) rows, wall flips, drawn levels for the alerts, NDX→QQQ ratio
-        private struct ProfileEntry { public double RawStrike, Value; public int Sign; }
-        private readonly List<ProfileEntry> _profile = new List<ProfileEntry>();
-        private readonly Dictionary<double, bool> _wallFlipped = new Dictionary<double, bool>();
-        private int _flipsComputedBars = -1;
-        private string _flipsComputedKey = "";
-        private struct AlertLevel { public double Price; public string Name; public string Kind; }
-        private readonly List<AlertLevel> _alertLevels = new List<AlertLevel>();
-        private readonly object _alertLock = new object();
-        private int _alertLastBar = -1;
-        private double _ndxQqqRatio = 0.0;
-        private DColor _posColor = DColor.FromArgb(0x22, 0xc5, 0x5e), _negColor = DColor.FromArgb(0xef, 0x44, 0x44);
-        private static readonly DColor C_ZG = DColor.FromArgb(0x9c, 0xa3, 0xaf), C_MP = DColor.FromArgb(0xef, 0x44, 0x44),
-            C_EM = DColor.FromArgb(0x3b, 0x82, 0xf6), C_VB = DColor.FromArgb(0x9c, 0xa3, 0xaf), C_STRUCT = DColor.FromArgb(0x9c, 0xa3, 0xaf),
-            C_CHARM = DColor.FromArgb(0xf9, 0x73, 0x16), C_DFLIP = DColor.FromArgb(0xf5, 0x9e, 0x0b),
-            C_BO_BULL = DColor.FromArgb(0x22, 0xc5, 0x5e), C_BO_BEAR = DColor.FromArgb(0xef, 0x44, 0x44);
 
         private static readonly string _logPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
@@ -179,11 +158,11 @@ namespace ATAS.Indicators.Technical
         [Display(Name = "ES↔SPX spread (auto from S:)", GroupName = "2. Layout", Order = 2,
                  Description = "Read automatically from the cloud S: header. Can be overridden with Manual spread.")]
         [Range(0, 200)]
-        public double EsSpxSpread { get; set; } = 0.0;   // 0 = not known: strikes shown as-is until S: arrives
+        public double EsSpxSpread { get; set; } = 24.0;
 
         [Display(Name = "NQ↔NDX spread", GroupName = "2. Layout", Order = 3)]
         [Range(0, 200)]
-        public double NqNdxSpread { get; set; } = 0.0;
+        public double NqNdxSpread { get; set; } = 40.0;
 
         [Display(Name = "Manual spread override (0 = auto)", GroupName = "2. Layout", Order = 4,
                  Description = "If > 0, forces the ES↔SPX spread to this value instead of S: from cloud. Useful to match TLADe Terminal.")]
@@ -201,67 +180,13 @@ namespace ATAS.Indicators.Technical
         public bool ShowSystemLevels { get; set; } = true;
 
         [Display(Name = "Show Structure (PDH/PDL/PWH/PWL)", GroupName = "3. Visibility", Order = 3)]
-        public bool ShowStructureLevels { get; set; } = false;
+        public bool ShowStructureLevels { get; set; } = true;
 
-        [Display(Name = "Show Delta Flip (DF)", GroupName = "3. Visibility", Order = 9)]
-        public bool ShowDeltaFlip { get; set; } = true;
-
-        [Display(Name = "Show only levels near price", GroupName = "4. Filter", Order = 4)]
-        public bool ShowOnlyNear { get; set; } = false;
-        [Display(Name = "  Radius (%)", GroupName = "4. Filter", Order = 5)]
-        public double NearPct { get; set; } = 3.0;
-
-        [Display(Name = "Draw on timeframes above 1H", GroupName = "2. Layout", Order = 6,
-            Description = "Off: on 4H, Daily, Weekly and Monthly charts the indicator stays silent.")]
-        public bool ShowAboveH1 { get; set; } = false;
-
-        [Display(Name = "Theme (Wall Street Classic/Boreal/Lady Trader)", GroupName = "5. Style", Order = 0)]
-        public string Theme { get; set; } = "Wall Street Classic";
-        [Display(Name = "Line style walls/ZG (Solid/Dashed/Dotted)", GroupName = "5. Style", Order = 0)]
-        public string LineStyle { get; set; } = "Dotted";
-
-        [Display(Name = "Show Breakout Structure", GroupName = "6. Breakout Structure", Order = 0,
-            Description = "Breakouts from the chart's own bars, on closed bars of each timeframe. A breakout dies when a later bar of the same timeframe, in the opposite direction, closes back through it.")]
-        public bool ShowBreakoutGroup { get; set; } = false;
-        [Display(Name = "Monthly", GroupName = "6. Breakout Structure", Order = 1)] public bool ShowBosM { get; set; } = false;
-        [Display(Name = "Weekly", GroupName = "6. Breakout Structure", Order = 2)] public bool ShowBosW { get; set; } = false;
-        [Display(Name = "Daily", GroupName = "6. Breakout Structure", Order = 3)] public bool ShowBosD { get; set; } = true;
-        [Display(Name = "4H", GroupName = "6. Breakout Structure", Order = 4)] public bool ShowBosH4 { get; set; } = true;
-        [Display(Name = "1H", GroupName = "6. Breakout Structure", Order = 5)] public bool ShowBosH1 { get; set; } = true;
-        [Range(1, 10)]
-        [Display(Name = "Keep last N per timeframe", GroupName = "6. Breakout Structure", Order = 6)] public int BosKeepPerTf { get; set; } = 2;
-
-        [Display(Name = "Show Confluence Zones", GroupName = "7. Confluence Zones", Order = 0)]
-        public bool ShowConfluence { get; set; } = false;
-        [Range(2, 5)]
-        [Display(Name = "Min cluster size for box", GroupName = "7. Confluence Zones", Order = 1)] public int ConfluenceMinSize { get; set; } = 3;
-        [Display(Name = "Band Width (% of EM)", GroupName = "7. Confluence Zones", Order = 2,
-            Description = "Total band as a percentage of the EM range (EM High − EM Low), split half above and half below (7% = ±3.5%). No EM in the data → no zones.")]
-        public double ConfluenceEmPct { get; set; } = 7.0;
-
-        [Display(Name = "Show Profile Bars (P:)", GroupName = "8. Profile", Order = 0)]
-        public bool ShowProfileBars { get; set; } = true;
-        [Display(Name = "Profile width (px)", GroupName = "8. Profile", Order = 1)] public int ProfileWidthPx { get; set; } = 120;
-        [Display(Name = "Profile bar height (ticks)", GroupName = "8. Profile", Order = 2)] public int ProfileBarHeightTicks { get; set; } = 8;
-        [Display(Name = "Profile scale max", GroupName = "8. Profile", Order = 3)] public double ProfileScaleMax { get; set; } = 10.0;
-
-        [Display(Name = "Show Session Boxes", GroupName = "8b. Session Boxes", Order = 0)] public bool ShowSessionBoxes { get; set; } = false;
-        [Display(Name = "Asia (18:00-03:00 ET)", GroupName = "8b. Session Boxes", Order = 1)] public bool ShowBoxAsia { get; set; } = true;
-        [Display(Name = "Europe (03:00-08:00 ET)", GroupName = "8b. Session Boxes", Order = 2)] public bool ShowBoxEU { get; set; } = true;
-        [Display(Name = "Pre-Market (08:00-09:30 ET)", GroupName = "8b. Session Boxes", Order = 3)] public bool ShowBoxPre { get; set; } = true;
-        [Display(Name = "US RTH (09:30-16:00 ET)", GroupName = "8b. Session Boxes", Order = 4)] public bool ShowBoxUS { get; set; } = true;
-        [Display(Name = "Show Historical (prev days)", GroupName = "8b. Session Boxes", Order = 5)] public bool ShowSessionsHist { get; set; } = false;
-
-        [Display(Name = "Enable Level Cross Alerts", GroupName = "9. Alerts", Order = 0)] public bool EnableAlerts { get; set; } = false;
-        [Display(Name = "Call/Put Walls", GroupName = "9. Alerts", Order = 1)] public bool AlertWalls { get; set; } = true;
-        [Display(Name = "ZG / Max Pain / EM / Vol Bands", GroupName = "9. Alerts", Order = 2)] public bool AlertSystem { get; set; } = true;
-        [Display(Name = "Breakouts", GroupName = "9. Alerts", Order = 3)] public bool AlertBos { get; set; } = true;
-
-        [Browsable(false)]
-        public bool ShowBreakoutLevels { get => ShowBreakoutGroup; set => ShowBreakoutGroup = value; }
+        [Display(Name = "Show Breakout Areas (BL/BS)", GroupName = "3. Visibility", Order = 7)]
+        public bool ShowBreakoutLevels { get; set; } = true;
 
         [Display(Name = "Show Charm Magnet (CM)", GroupName = "3. Visibility", Order = 8)]
-        public bool ShowCharmMagnet { get; set; } = false;
+        public bool ShowCharmMagnet { get; set; } = true;
 
         // VP (POC/VAH/VAL) is intentionally NOT in the TLADe payload: ATAS
         // already ships a built-in VolumeProfile study that computes it
@@ -425,31 +350,8 @@ namespace ATAS.Indicators.Technical
         // ──────────────────────────────────────────────────────────────────────
 
         private int _ocCalls = 0;
-        // A CLOSE that crosses a drawn level: the close before on one side, the last closed bar on the
-        // other. Evaluated once when a bar closes, so a wick through a wall does not fire.
-        private void CheckLevelAlerts(int closedBar)
-        {
-            if (closedBar < 1 || closedBar == _alertLastBar) return;
-            _alertLastBar = closedBar;
-            var c1c = GetCandle(closedBar); var c2c = GetCandle(closedBar - 1);
-            if (c1c == null || c2c == null) return;
-            double c1 = (double)c1c.Close, c2 = (double)c2c.Close;
-            List<AlertLevel> lv;
-            lock (_alertLock) lv = new List<AlertLevel>(_alertLevels);
-            foreach (var al in lv)
-            {
-                bool wanted = al.Kind == "wall" ? AlertWalls : al.Kind == "system" ? AlertSystem : AlertBos;
-                if (!wanted) continue;
-                bool up = c2 < al.Price && c1 >= al.Price, down = c2 > al.Price && c1 <= al.Price;
-                if (!up && !down) continue;
-                try { AddAlert("alert1", InstrumentInfo?.Instrument ?? "", $"TLADe {al.Name} crossed {(up ? "UP" : "DOWN")}", Colors.Black, Colors.Orange); }
-                catch (Exception ex) { Log($"alert EX: {ex.Message}"); }
-            }
-        }
-
         protected override void OnCalculate(int bar, decimal value)
         {
-            if (EnableAlerts && bar == CurrentBar - 1 && bar >= 2) CheckLevelAlerts(bar - 1);
             try
             {
                 // v3.1.1 — Session AVWAP: compute on every bar (historical + live).
@@ -672,9 +574,9 @@ namespace ATAS.Indicators.Technical
         }
         private static DateTime EUAnchorFor(DateTime et)
         {
-            // 03:00 ET — Europe open (was 02:00: the TradingView indicator and the chart both anchor at 03:00)
-            var today03 = new DateTime(et.Year, et.Month, et.Day, 3, 0, 0);
-            return et >= today03 ? today03 : today03.AddDays(-1);
+            // 02:00 ET — Europe open
+            var today02 = new DateTime(et.Year, et.Month, et.Day, 2, 0, 0);
+            return et >= today02 ? today02 : today02.AddDays(-1);
         }
         private static DateTime USAnchorFor(DateTime et)
         {
@@ -889,20 +791,8 @@ namespace ATAS.Indicators.Technical
                 {
                     var spreadStr = raw.Substring(2, sEnd - 2);
                     if (double.TryParse(spreadStr, NumberStyles.Float, _inv, out var sp) && sp > 0)
-                    {
-                        if (IsNqFamily()) NqNdxSpread = sp; else EsSpxSpread = sp;
-                    }
+                        EsSpxSpread = sp;
                     raw = raw.Substring(sEnd + 1);
-                }
-            }
-            // R: NDX→QQQ ratio (NQ family strings only)
-            if (raw.StartsWith("R:", StringComparison.Ordinal))
-            {
-                int rEnd = raw.IndexOf('|');
-                if (rEnd > 2)
-                {
-                    if (double.TryParse(raw.Substring(2, rEnd - 2), NumberStyles.Float, _inv, out var rr) && rr > 0) _ndxQqqRatio = rr;
-                    raw = raw.Substring(rEnd + 1);
                 }
             }
 
@@ -923,7 +813,6 @@ namespace ATAS.Indicators.Technical
 
             // P: = profil GEX per strike -> map strike(rotunjit) -> semn (+1/-1)
             var signMap = new Dictionary<long, int>();
-            var freshProfile = new List<ProfileEntry>();
             if (!string.IsNullOrEmpty(profileData))
             {
                 foreach (var pair in profileData.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
@@ -931,16 +820,14 @@ namespace ATAS.Indicators.Technical
                     var p = pair.Split(',');
                     if (p.Length < 2) continue;
                     if (!double.TryParse(p[0], NumberStyles.Any, _inv, out var pstrike)) continue;
-                    double pval = 0; double.TryParse(p[1], NumberStyles.Any, _inv, out pval);
                     int sign = 0;
                     if (p.Length >= 3 && int.TryParse(p[2], NumberStyles.Any, _inv, out var s))
                         sign = Math.Sign(s);
-                    else sign = pval >= 0 ? 1 : -1;
+                    else if (double.TryParse(p[1], NumberStyles.Any, _inv, out var v))
+                        sign = v >= 0 ? 1 : -1;
                     signMap[(long)Math.Round(pstrike)] = sign;
-                    freshProfile.Add(new ProfileEntry { RawStrike = pstrike, Value = pval, Sign = sign });
                 }
             }
-            lock (_lvlLock) { _profile.Clear(); _profile.AddRange(freshProfile); }
 
             if (!string.IsNullOrEmpty(levelsData))
             {
@@ -986,8 +873,6 @@ namespace ATAS.Indicators.Technical
                 if (ChartInfo == null) return;
 
                 EnsureFont();
-                ResolveTheme();
-                if (!TfActive()) { lock (_alertLock) _alertLevels.Clear(); return; }
 
                 int regionW = ChartInfo.PriceChartContainer.Region.Width;
                 int x1 = 0;
@@ -995,17 +880,7 @@ namespace ATAS.Indicators.Technical
 
                 // Snapshot under lock
                 List<LevelEntry> snap;
-                List<ProfileEntry> prof;
-                lock (_lvlLock) { snap = new List<LevelEntry>(_levels); prof = new List<ProfileEntry>(_profile); }
-                var alerts = new List<AlertLevel>();
-
-                if (ShowSessionBoxes)
-                    DrawSessionBoxes(ctx);
-                if (ShowProfileBars && prof.Count > 0)
-                    DrawProfileBars(ctx, prof, x2);
-                if (ShowConfluence)
-                    DrawConfluenceZones(ctx, snap, x1, x2);
-                ComputeWallFlips(CurrentBar, snap);
+                lock (_lvlLock) snap = new List<LevelEntry>(_levels);
 
                 if (ShowStatus)
                     DrawStatus(ctx, snap.Count);
@@ -1013,16 +888,16 @@ namespace ATAS.Indicators.Technical
                 // v3.1.1 — Session AVWAP polylines (= local compute, no payload
                 // dependency). Rendered before the snap.Count gate so they
                 // appear even if no cloud levels are loaded yet.
-                if (ShowAvwapAsia) DrawAvwapPolyline(ctx, _avwapAsia, AVWAP_COLOR_ASIA, "AVWAP Asia");
-                if (ShowAvwapEU)   DrawAvwapPolyline(ctx, _avwapEU,   AVWAP_COLOR_EU,   "AVWAP EU");
-                if (ShowAvwapUS)   DrawAvwapPolyline(ctx, _avwapUS,   AVWAP_COLOR_US,   "AVWAP US");
-                if (ShowAvwapPD)   DrawAvwapPolyline(ctx, _avwapPD,   AVWAP_COLOR_PD,   "AVWAP US Prev Day");
+                if (ShowAvwapAsia) DrawAvwapPolyline(ctx, _avwapAsia, AVWAP_COLOR_ASIA, "Asia");
+                if (ShowAvwapEU)   DrawAvwapPolyline(ctx, _avwapEU,   AVWAP_COLOR_EU,   "EU");
+                if (ShowAvwapUS)   DrawAvwapPolyline(ctx, _avwapUS,   AVWAP_COLOR_US,   "US");
+                if (ShowAvwapPD)   DrawAvwapPolyline(ctx, _avwapPD,   AVWAP_COLOR_PD,   "PD");
 
                 // v3.2 — local multi-TF BOS (W/D/H4/H1) computed from the chart's
                 // native bars (1:1 with terminal computeAllBOS). Cloud PA is
                 // deprecated client-side, so these are computed here. Added before
                 // the snap.Count gate so they render even with no cloud levels.
-                if (ShowBreakoutGroup)
+                if (ShowBreakoutLevels)
                 {
                     // CurrentBar is the bar COUNT — valid indices are 0..CurrentBar-1.
                     ComputeLocalBos(CurrentBar);
@@ -1084,8 +959,6 @@ namespace ATAS.Indicators.Technical
                     bool isStructure    = IsStructure(lvl.Type);
                     bool isBreakout     = IsBreakout(lvl.Type);
                     bool isCharm        = IsCharmMagnet(lvl.Type);
-                    bool isDf           = IsDeltaFlip(lvl.Type);
-                    bool inRange = !ShowOnlyNear || (spot > 0 && Math.Abs(spot - y) / spot * 100.0 <= NearPct);
                     bool passes = !EnableThreshold || !isGex ||
                                   lvl.Magnitude == 0 || lvl.Magnitude >= GexThreshold;
                     bool isProtected = isGex && (NearlyEqual(lvl.RawStrike, closestAbove) ||
@@ -1101,43 +974,36 @@ namespace ATAS.Indicators.Technical
                         else if (!isAbove && belowDrawn < halfMax) show = true;
                     }
                     else if (isSystem    && ShowSystemLevels)    show = true;
-                    else if (isStructure && ShowStructureLevels && lvl.IsLocal) show = true;   // feed structure ignored
-                    else if (isBreakout  && ShowBreakoutGroup && lvl.IsLocal) show = true;      // feed breakouts ignored
+                    else if (isStructure && ShowStructureLevels) show = true;
+                    else if (isBreakout  && ShowBreakoutLevels)  show = true;
                     else if (isCharm     && ShowCharmMagnet)     show = true;
-                    else if (isDf        && ShowDeltaFlip)       show = true;
 
-                    if (!show || !inRange) continue;
+                    if (!show) continue;
 
                     DColor color;
                     int width = isSystem ? LineWidthSystem : LineWidthGex;
-                    bool isWallFlipped = false;
 
-                    // Colour = NATURE (a Call Wall stays the call colour whatever its role); a flipped
-                    // wall is told by a thinner line and the "↺" suffix.
                     if (lvl.Type == "CW")
                     {
-                        isWallFlipped = _wallFlipped.TryGetValue(lvl.RawStrike, out var f1) && f1;
-                        color = _negColor;
+                        bool flipped = y < spot;
+                        color = flipped ? DColor.LimeGreen : DColor.FromArgb(0xef, 0x44, 0x44);
                         if (!maxIsAll && !isProtected) { if (isAbove) aboveDrawn++; else belowDrawn++; }
                     }
                     else if (lvl.Type == "PW")
                     {
-                        isWallFlipped = _wallFlipped.TryGetValue(lvl.RawStrike, out var f2) && f2;
-                        color = _posColor;
+                        bool flipped = y > spot;
+                        color = flipped ? DColor.FromArgb(0xef, 0x44, 0x44) : DColor.LimeGreen;
                         if (!maxIsAll && !isProtected) { if (isAbove) aboveDrawn++; else belowDrawn++; }
                     }
-                    else if (lvl.Type == "ZG") color = C_ZG;
-                    else if (lvl.Type == "MP") color = C_MP;
-                    else if (lvl.Type == "EH" || lvl.Type == "EL" || lvl.Type == "EHR" || lvl.Type == "ELR") color = C_EM;
-                    else if (lvl.Type == "VH" || lvl.Type == "VL") color = C_VB;
-                    else if (lvl.Type == "BL") color = C_BO_BULL;
-                    else if (lvl.Type == "BS") color = C_BO_BEAR;
-                    else if (lvl.Type == "CM") color = C_CHARM;
-                    else if (lvl.Type == "DF") color = C_DFLIP;
-                    else color = C_STRUCT;
-                    if (isWallFlipped) width = Math.Max(1, width - 1);
-                    var dash = isBreakout ? (lvl.BoHigherTf ? System.Drawing.Drawing2D.DashStyle.Solid : System.Drawing.Drawing2D.DashStyle.Dash) : StyleFor(lvl.Type);
-                    if (isBreakout) width = lvl.BoWidth;
+                    else if (lvl.Type == "ZG") color = DColor.DodgerBlue;
+                    else if (lvl.Type == "MP") color = DColor.Orange;
+                    else if (lvl.Type == "EH" || lvl.Type == "EL") color = DColor.Gold;
+                    else if (lvl.Type == "VH" || lvl.Type == "VL") color = DColor.FromArgb(100, 180, 255);
+                    // v3.1 — new families (palettes chosen to be distinct from CW/PW red/green)
+                    else if (lvl.Type == "BL") color = DColor.FromArgb(0x10, 0xB9, 0x81);  // emerald — Breakout Long
+                    else if (lvl.Type == "BS") color = DColor.FromArgb(0xF4, 0x3F, 0x5E);  // rose    — Breakout Short
+                    else if (lvl.Type == "CM") color = DColor.FromArgb(0xC0, 0x73, 0xFF);  // violet  — Charm Magnet
+                    else color = DColor.DimGray;
 
                     // Compute line start: scaled by magnitude for walls, full-width otherwise
                     int lineX1 = x1;
@@ -1157,14 +1023,9 @@ namespace ATAS.Indicators.Technical
                         if (tickLen < 1) tickLen = 1;
                     }
 
-                    string name = isBreakout ? $"{lvl.Label} {ConvertPrice(lvl.RawStrike).ToString("0.00", _inv)}"
-                                             : $"{FormatPrice(lvl.RawStrike)} {LevelName(lvl.Type, lvl.Label)}{(isWallFlipped ? " \u21BA" : "")}";
-                    HL(ctx, (decimal)y, name, color, width, lineX1, x2, isAbove, lvl.GexSign, tickLen, dash);
-                    if (isGex || isSystem || isBreakout)
-                        alerts.Add(new AlertLevel { Price = y, Name = name, Kind = isGex ? "wall" : isSystem ? "system" : "bo" });
+                    HL(ctx, (decimal)y, $"{FormatPrice(lvl.RawStrike)} {lvl.Label}", color, width, lineX1, x2, isAbove, lvl.GexSign, tickLen);
                     drawn++;
                 }
-                lock (_alertLock) { _alertLevels.Clear(); _alertLevels.AddRange(alerts); }
 
                 if (_ocCalls > 0 && _ocCalls % 5000 == 0)
                     Log($"OnRender drew {drawn}/{snap.Count} levels");
@@ -1175,11 +1036,11 @@ namespace ATAS.Indicators.Technical
             }
         }
 
-        private void HL(RenderContext ctx, decimal price, string label, DColor color, int width, int x1, int x2, bool isAbove, int gexSign, int tickLen, System.Drawing.Drawing2D.DashStyle dash)
+        private void HL(RenderContext ctx, decimal price, string label, DColor color, int width, int x1, int x2, bool isAbove, int gexSign, int tickLen)
         {
             if (price <= 0m) return;
             int y = ChartInfo.GetYByPrice(price, false);
-            var pen = new RenderPen(color, width, dash);
+            var pen = new RenderPen(color, width);
             ctx.DrawLine(pen, x1, y, x2, y);
 
             if (ShowLabels)
@@ -1229,129 +1090,6 @@ namespace ATAS.Indicators.Technical
                 try { this.DrawLabelOnPriceAxis(ctx, price.ToString("0.##", _inv), y, _fn, color, color); }
                 catch { }
             }
-        }
-
-        // Session boxes: Asia / Europe / Pre / US hi-lo rectangles of the last futures day on the chart
-        // (18:00 ET boundary), or of every day with "Show Historical". Same sessions as the TradingView
-        // indicator: Asia 18:00-03:00, EU 03:00-08:00, Pre 08:00-09:30, US 09:30-16:00 ET.
-        private void DrawSessionBoxes(RenderContext ctx)
-        {
-            try
-            {
-                int n = CurrentBar;
-                if (n < 2) return;
-                var lastC = GetCandle(n - 1); if (lastC == null) return;
-                var lastEt = ToEt(lastC.Time);
-                DateTime lastDay = lastEt.Hour >= 18 ? lastEt.Date.AddDays(1) : lastEt.Date;
-                bool[] on = { ShowBoxAsia, ShowBoxEU, ShowBoxPre, ShowBoxUS };
-                DColor[] cols = { DColor.FromArgb(26, 0xf5, 0x9e, 0x0b), DColor.FromArgb(26, 0x3b, 0x82, 0xf6), DColor.FromArgb(20, 0xa8, 0x55, 0xf7), DColor.FromArgb(20, 0x22, 0xc5, 0x5e) };
-                int curType = -1, b0 = -1, b1 = -1; double hi = 0, lo = 0;
-                int firstBar = ShowSessionsHist ? 0 : Math.Max(0, n - 2000);
-                Action flush = () =>
-                {
-                    if (curType < 0 || b0 < 0 || !on[curType]) return;
-                    int x0 = ChartInfo.PriceChartContainer.GetXByBar(b0), x1 = ChartInfo.PriceChartContainer.GetXByBar(b1);
-                    if (x1 < x0) { int t = x0; x0 = x1; x1 = t; }
-                    int yT = ChartInfo.GetYByPrice((decimal)hi, false), yB = ChartInfo.GetYByPrice((decimal)lo, false);
-                    var c = cols[curType];
-                    ctx.FillRectangle(c, new DRect(x0, yT, Math.Max(2, x1 - x0), Math.Max(1, yB - yT)));
-                    ctx.DrawRectangle(new RenderPen(DColor.FromArgb(90, c.R, c.G, c.B), 1), new DRect(x0, yT, Math.Max(2, x1 - x0), Math.Max(1, yB - yT)));
-                };
-                for (int i = firstBar; i < n; i++)
-                {
-                    var c = GetCandle(i); if (c == null) continue;
-                    var et = ToEt(c.Time);
-                    DateTime fd = et.Hour >= 18 ? et.Date.AddDays(1) : et.Date;
-                    if (!ShowSessionsHist && fd != lastDay) continue;
-                    int mins = et.Hour * 60 + et.Minute;
-                    int type = (mins >= 1080 || mins < 180) ? 0 : mins < 480 ? 1 : mins < 570 ? 2 : mins < 960 ? 3 : -1;
-                    if (type != curType)
-                    {
-                        flush();
-                        curType = type; b0 = i; b1 = i; hi = (double)c.High; lo = (double)c.Low;
-                    }
-                    else
-                    {
-                        b1 = i;
-                        if ((double)c.High > hi) hi = (double)c.High;
-                        if ((double)c.Low < lo) lo = (double)c.Low;
-                    }
-                }
-                flush();
-            }
-            catch (Exception ex) { Log($"DrawSessionBoxes EX: {ex.Message}"); }
-        }
-
-        // GEX profile: a right-edge histogram of the P: rows, calls one colour and puts the other.
-        private void DrawProfileBars(RenderContext ctx, List<ProfileEntry> prof, int x2)
-        {
-            try
-            {
-                double maxAbs = Math.Max(1e-9, ProfileScaleMax);
-                double tick = (double)(InstrumentInfo?.TickSize ?? 0.25m);
-                int barH = Math.Max(2, Math.Abs(ChartInfo.GetYByPrice((decimal)(0.0), false) - ChartInfo.GetYByPrice((decimal)(tick * Math.Max(1, ProfileBarHeightTicks)), false)));
-                int widthPx = Math.Max(10, ProfileWidthPx);
-                foreach (var pr in prof)
-                {
-                    double frac = Math.Min(1.0, Math.Abs(pr.Value) / maxAbs);
-                    if (frac <= 0) continue;
-                    double y = ConvertPrice(pr.RawStrike);
-                    int yPix = ChartInfo.GetYByPrice((decimal)y, false);
-                    int len = (int)Math.Round(frac * widthPx);
-                    var baseC = pr.Sign >= 0 ? _negColor : _posColor;   // calls = neg colour, puts = pos colour (as the Pine profile)
-                    byte alpha = (byte)Math.Clamp((int)Math.Round(255.0 * (0.20 + frac * 0.50)), 0, 255);
-                    ctx.FillRectangle(DColor.FromArgb(alpha, baseC.R, baseC.G, baseC.B), new DRect(x2 - len, yPix - barH / 2, len, Math.Max(1, barH)));
-                }
-            }
-            catch (Exception ex) { Log($"DrawProfileBars EX: {ex.Message}"); }
-        }
-
-        // Confluence zones: every level on the chart (feed levels, breakouts, AVWAPs, structure), sorted
-        // and clustered within a band sized on the EM range. No EM in the data → no zones.
-        private void DrawConfluenceZones(RenderContext ctx, List<LevelEntry> snap, int x1, int x2)
-        {
-            try
-            {
-                double emH = double.NaN, emL = double.NaN;
-                foreach (var l in snap) { if (l.Type == "EH") emH = ConvertPrice(l.RawStrike); else if (l.Type == "EL") emL = ConvertPrice(l.RawStrike); }
-                if (double.IsNaN(emH) || double.IsNaN(emL) || emH - emL <= 0) return;
-                double band = (emH - emL) * (ConfluenceEmPct / 100.0) / 2.0;
-                var prices = new List<double>();
-                foreach (var l in snap) if (IsGex(l.Type) || IsSystem(l.Type)) prices.Add(ConvertPrice(l.RawStrike));
-                if (ShowBreakoutGroup) { ComputeLocalBos(CurrentBar); foreach (var b in _localBos) prices.Add(ConvertPrice(b.RawStrike)); }
-                if (ShowStructureLevels) { ComputeLocalPA(CurrentBar); foreach (var pa in _localPA) prices.Add(ConvertPrice(pa.RawStrike)); }
-                decimal[][] av = { _avwapAsia, _avwapEU, _avwapUS, _avwapPD };
-                bool[] on = { ShowAvwapAsia, ShowAvwapEU, ShowAvwapUS, ShowAvwapPD };
-                int lastIdx = CurrentBar - 1;
-                for (int i = 0; i < 4; i++)
-                {
-                    if (!on[i] || av[i] == null || lastIdx < 0 || lastIdx >= av[i].Length) continue;
-                    decimal v = av[i][lastIdx]; if (v <= 0) continue;
-                    prices.Add((double)v);
-                }
-                prices.Sort();
-                int n = prices.Count, minSize = Math.Max(2, ConfluenceMinSize);
-                int i0 = 0;
-                while (i0 < n)
-                {
-                    double cMin = prices[i0], cMax = cMin; int size = 1, j = i0 + 1;
-                    while (j < n) { if (prices[j] - cMin <= 2 * band) { cMax = prices[j]; size++; j++; } else break; }
-                    if (size >= minSize)
-                    {
-                        int capped = Math.Min(size, 5);
-                        DColor c = capped >= 5 ? DColor.FromArgb(0xef, 0x44, 0x44) : capped >= 4 ? DColor.FromArgb(0xfb, 0x92, 0x3c) : DColor.FromArgb(0xfa, 0xcc, 0x15);
-                        byte alpha = (byte)(capped >= 5 ? 89 : capped >= 4 ? 77 : 64);
-                        int yTop = ChartInfo.GetYByPrice((decimal)cMax, false), yBot = ChartInfo.GetYByPrice((decimal)cMin, false);
-                        if (yBot - yTop < 2) { yTop -= 1; yBot += 1; }
-                        ctx.FillRectangle(DColor.FromArgb(alpha, c.R, c.G, c.B), new DRect(x1, yTop, x2 - x1, yBot - yTop));
-                        string txt = capped >= 5 ? "UBER" : capped + "x";
-                        var sz = ctx.MeasureString(txt, _fn);
-                        ctx.DrawString(txt, _fn, DColor.FromArgb(220, c.R, c.G, c.B), new DRect(x1 + 4, (yTop + yBot) / 2 - (int)sz.Height / 2, (int)sz.Width + 4, (int)sz.Height), _sfL);
-                    }
-                    i0 = j;
-                }
-            }
-            catch (Exception ex) { Log($"DrawConfluenceZones EX: {ex.Message}"); }
         }
 
         private void DrawStatus(RenderContext ctx, int count)
@@ -1408,7 +1146,7 @@ namespace ATAS.Indicators.Technical
 
                 var pen = new RenderPen(color, AvwapLineWidth);
                 int? prevX = null, prevY = null;
-                int lastValidX = -1, lastValidY = -1; double lastValidValue = 0;
+                int lastValidX = -1, lastValidY = -1;
                 int drawn = 0;
 
                 for (int b = firstBar; b <= lastBar; b++)
@@ -1432,12 +1170,12 @@ namespace ATAS.Indicators.Technical
                         drawn++;
                     }
                     prevX = x; prevY = y;
-                    lastValidX = x; lastValidY = y; lastValidValue = (double)v;
+                    lastValidX = x; lastValidY = y;
                 }
 
                 if (ShowAvwapLabels && lastValidX >= 0)
                 {
-                    string txt = $" {lastValidValue.ToString("0.00", _inv)} {label} ";
+                    string txt = $" {label} ";
                     var sz = ctx.MeasureString(txt, _fn);
                     var bg = DColor.FromArgb(180, color.R, color.G, color.B);
                     int lx = lastValidX + 2;
@@ -1472,122 +1210,7 @@ namespace ATAS.Indicators.Technical
 
         private static bool IsGex(string t)       => t == "CW" || t == "PW" || t == "GL";
         private static bool IsSystem(string t)    => t == "ZG" || t == "MP" || t == "EH" ||
-                                                     t == "EL" || t == "EHR" || t == "ELR" || t == "VH" || t == "VL";
-        private static bool IsDeltaFlip(string t) => t == "DF";
-
-        // One name per level code, the same words on every platform. Labels read "price + name".
-        private static string LevelName(string code, string feedLabel)
-        {
-            switch (code)
-            {
-                case "CW": return "Call Wall";
-                case "PW": return "Put Wall";
-                case "GL": return "GEX Level";
-                case "ZG": return "Zero Gamma";
-                case "MP": return "Max Pain";
-                case "EH": return "EM High Globex";
-                case "EL": return "EM Low Globex";
-                case "EHR": return "EM High RTH";
-                case "ELR": return "EM Low RTH";
-                case "VH": return "Vol High";
-                case "VL": return "Vol Low";
-                case "CM": return "Charm Magnet";
-                case "DF": return "Delta Flip";
-                case "PDH": return "Previous Day High";
-                case "PDL": return "Previous Day Low";
-                case "PWH": return "Previous Week High";
-                case "PWL": return "Previous Week Low";
-                default: return feedLabel ?? code;
-            }
-        }
-
-        private System.Drawing.Drawing2D.DashStyle UserLineStyle()
-        {
-            var st = (LineStyle ?? "").Trim();
-            if (st.Equals("Solid", StringComparison.OrdinalIgnoreCase)) return System.Drawing.Drawing2D.DashStyle.Solid;
-            if (st.Equals("Dashed", StringComparison.OrdinalIgnoreCase)) return System.Drawing.Drawing2D.DashStyle.Dash;
-            return System.Drawing.Drawing2D.DashStyle.Dot;
-        }
-
-        // Line styles as the TradingView indicator: walls and Zero Gamma in the user's style, Max Pain /
-        // Vol Bands / Structure dotted, EM and Delta Flip dashed, Charm Magnet solid, breakouts by timeframe.
-        private System.Drawing.Drawing2D.DashStyle StyleFor(string t)
-        {
-            if (t == "CM") return System.Drawing.Drawing2D.DashStyle.Solid;
-            if (t == "MP" || t == "VH" || t == "VL" || IsStructure(t)) return System.Drawing.Drawing2D.DashStyle.Dot;
-            if (t == "EH" || t == "EL" || t == "EHR" || t == "ELR" || t == "DF") return System.Drawing.Drawing2D.DashStyle.Dash;
-            return UserLineStyle();
-        }
-
-        private void ResolveTheme()
-        {
-            var th = (Theme ?? "").Trim();
-            if (th.Equals("Boreal", StringComparison.OrdinalIgnoreCase)) { _posColor = DColor.FromArgb(0x22, 0xd3, 0xee); _negColor = DColor.FromArgb(0xf4, 0x72, 0xb6); }
-            else if (th.Equals("Lady Trader", StringComparison.OrdinalIgnoreCase)) { _posColor = DColor.FromArgb(0x2d, 0xd4, 0xbf); _negColor = DColor.FromArgb(0xc0, 0x84, 0xfc); }
-            else { _posColor = DColor.FromArgb(0x22, 0xc5, 0x5e); _negColor = DColor.FromArgb(0xef, 0x44, 0x44); }
-        }
-
-        // The indicator is an intraday tool: above 1H it draws nothing unless asked.
-        private bool TfActive()
-        {
-            if (ShowAboveH1) return true;
-            try
-            {
-                var tf = (ChartInfo?.TimeFrame ?? "").Trim().ToUpperInvariant();
-                if (tf.StartsWith("D") || tf.StartsWith("W") || tf.StartsWith("MN")) return false;
-                if (tf.StartsWith("H")) { int h; return int.TryParse(tf.Substring(1), out h) ? h <= 1 : true; }
-                if (tf.StartsWith("M")) { int m; return int.TryParse(tf.Substring(1), out m) ? m <= 60 : true; }
-                int mins; if (int.TryParse(tf, out mins)) return mins <= 60;
-                return true;   // tick / range / volume bars: intraday
-            }
-            catch { return true; }
-        }
-
-        private int ChartTfMinutes()
-        {
-            try
-            {
-                var tf = (ChartInfo?.TimeFrame ?? "").Trim().ToUpperInvariant();
-                int v;
-                if (tf.StartsWith("H") && int.TryParse(tf.Substring(1), out v)) return v * 60;
-                if (tf.StartsWith("M") && int.TryParse(tf.Substring(1), out v)) return v;
-                if (int.TryParse(tf, out v)) return v;
-            }
-            catch { }
-            return 0;
-        }
-
-        // Wall flip, the TradingView rule: two consecutive 5-minute closes beyond the strike flip the
-        // wall, two the other way restore it. Replayed on the chart's bars aggregated to 5 minutes
-        // (on charts above 5 minutes each bar close counts as one close). Deterministic on reload.
-        private void ComputeWallFlips(int barCount, List<LevelEntry> snap)
-        {
-            string key = string.Join(";", snap.FindAll(l => l.Type == "CW" || l.Type == "PW").ConvertAll(l => l.Type + l.RawStrike.ToString("0.##", _inv)));
-            if (barCount == _flipsComputedBars && key == _flipsComputedKey) return;
-            _flipsComputedBars = barCount; _flipsComputedKey = key;
-            _wallFlipped.Clear();
-            var walls = snap.FindAll(l => l.Type == "CW" || l.Type == "PW");
-            if (walls.Count == 0 || barCount < 3) return;
-            int tf = ChartTfMinutes();
-            var bars = (tf > 0 && tf < 5) ? AggregateByEtPeriod(barCount, 5) : null;
-            int n = walls.Count;
-            var cnt = new int[n]; var flipped = new bool[n];
-            int last = (bars != null ? bars.Count : barCount) - 2;   // the last bar is still forming
-            for (int i = Math.Max(0, last - 3000); i <= last; i++)
-            {
-                double close = bars != null ? bars[i].C : (double)(GetCandle(i)?.Close ?? 0m);
-                if (close <= 0) continue;
-                double c = ChartToRaw(close);
-                for (int w = 0; w < n; w++)
-                {
-                    double k = walls[w].RawStrike; bool cw = walls[w].Type == "CW";
-                    bool beyond = cw ? (flipped[w] ? c < k : c > k) : (flipped[w] ? c > k : c < k);
-                    if (beyond) { cnt[w]++; if (cnt[w] >= 2) { flipped[w] = !flipped[w]; cnt[w] = 0; } }
-                    else cnt[w] = 0;
-                }
-            }
-            for (int w = 0; w < n; w++) _wallFlipped[walls[w].RawStrike] = flipped[w];
-        }
+                                                     t == "EL" || t == "VH" || t == "VL";
         // v3.1 — 2 new families surfaced by the extended cloud payload.
         // The parser is generic (= any type tag from L: lands in _levels) so
         // we only need to classify + color them here.
@@ -1625,8 +1248,6 @@ namespace ATAS.Indicators.Technical
 
         private double EffectiveEsSpread =>
             ManualSpreadOverride > 0 ? ManualSpreadOverride : EsSpxSpread;
-        private double EffectiveNqSpread =>
-            ManualSpreadOverride > 0 ? ManualSpreadOverride : NqNdxSpread;
 
         // ──────────────────────────────────────────────────────────────────────
         //  LOCAL BOS — v3.2  (1:1 port of terminal clientEngineService.computeAllBOS)
@@ -1638,7 +1259,7 @@ namespace ATAS.Indicators.Technical
         //  no spread, no cloud): daily by ET day, weekly by ISO week, H4/H1 by
         //  240/60-min buckets anchored at 18:00 ET (Globex open) — same as the terminal.
         // ──────────────────────────────────────────────────────────────────────
-        private struct DBar { public DateTime Day; public double O, H, L, C; }
+        private struct DBar { public DateTime Day; public double H, L, C; }
 
         private static bool IsQualityBreakout(DBar curr, DBar prev, bool bull)
         {
@@ -1672,7 +1293,7 @@ namespace ATAS.Indicators.Technical
                 {
                     if (has) days.Add(cur);
                     curDay = day; has = true;
-                    cur = new DBar { Day = day, O = (double)c.Open, H = (double)c.High, L = (double)c.Low, C = (double)c.Close };
+                    cur = new DBar { Day = day, H = (double)c.High, L = (double)c.Low, C = (double)c.Close };
                 }
                 else
                 {
@@ -1683,30 +1304,6 @@ namespace ATAS.Indicators.Technical
             }
             if (has) days.Add(cur);
             return days;
-        }
-
-        // Chart bars -> one bar per calendar key of the FUTURES day (week = its Monday, month = its 1st)
-        private List<DBar> AggregateByFuturesKey(int barCount, bool monthly)
-        {
-            var outl = new List<DBar>();
-            bool has = false; DateTime curKey = DateTime.MinValue; DBar cur = default;
-            for (int i = 0; i < barCount; i++)
-            {
-                var c = GetCandle(i);
-                if (c == null) continue;
-                var et = ToEt(c.Time);
-                DateTime fd = et.Hour >= 18 ? et.Date.AddDays(1) : et.Date;
-                DateTime key = monthly ? new DateTime(fd.Year, fd.Month, 1) : fd.AddDays(-(((int)fd.DayOfWeek + 6) % 7)).Date;
-                if (!has || key != curKey)
-                {
-                    if (has) outl.Add(cur);
-                    has = true; curKey = key;
-                    cur = new DBar { Day = fd, O = (double)c.Open, H = (double)c.High, L = (double)c.Low, C = (double)c.Close };
-                }
-                else { if ((double)c.High > cur.H) cur.H = (double)c.High; if ((double)c.Low < cur.L) cur.L = (double)c.Low; cur.C = (double)c.Close; }
-            }
-            if (has) outl.Add(cur);
-            return outl;
         }
 
         // Daily -> weekly by ISO week (= clientEngineService.aggregateToWeekly).
@@ -1745,7 +1342,7 @@ namespace ATAS.Indicators.Technical
                 {
                     if (has) outl.Add(cur);
                     has = true; curSlot = slot;
-                    cur = new DBar { Day = et.Date, O = (double)c.Open, H = (double)c.High, L = (double)c.Low, C = (double)c.Close };
+                    cur = new DBar { Day = et.Date, H = (double)c.High, L = (double)c.Low, C = (double)c.Close };
                 }
                 else { if ((double)c.High > cur.H) cur.H = (double)c.High; if ((double)c.Low < cur.L) cur.L = (double)c.Low; cur.C = (double)c.Close; }
             }
@@ -1754,41 +1351,26 @@ namespace ATAS.Indicators.Technical
         }
 
         // = clientEngineService.detectBOS: most recent valid bull + bear BOS.
-        // Breakouts of one timeframe, CLOSED bars only (the last element is the bar in progress). A
-        // breakout dies when a later bar of the SAME timeframe, in the opposite direction, closes back
-        // through its level — a long BO H1 lives until a bearish H1 bar closes below it. Of the
-        // survivors, the last BosKeepPerTf per timeframe are kept.
         private void DetectBosInto(List<DBar> c, string tf, List<LevelEntry> outList)
         {
-            int lastClosed = c.Count - 2;
-            if (lastClosed < 1) return;
-            var alive = new List<LevelEntry>();
-            for (int i = 1; i <= lastClosed; i++)
+            if (c.Count < 3) return;
+            bool foundBull = false, foundBear = false;
+            for (int i = c.Count - 2; i >= 2 && (!foundBull || !foundBear); i--)
             {
                 var curr = c[i]; var prev = c[i - 1];
-                if (IsQualityBreakout(curr, prev, true))
+                if (!foundBull && IsQualityBreakout(curr, prev, true))
                 {
-                    bool killed = false;
-                    for (int j = i + 1; j <= lastClosed; j++) { var b = c[j]; if (b.C < prev.H && b.C < b.O) { killed = true; break; } }
-                    if (!killed) alive.Add(MakeBos(prev.H, true, tf));
+                    bool valid = true;
+                    for (int j = i + 1; j < c.Count; j++) if (c[j].C < prev.H) { valid = false; break; }
+                    if (valid) { outList.Add(MakeBos(prev.H, true, tf)); foundBull = true; }
                 }
-                if (IsQualityBreakout(curr, prev, false))
+                if (!foundBear && IsQualityBreakout(curr, prev, false))
                 {
-                    bool killed = false;
-                    for (int j = i + 1; j <= lastClosed; j++) { var b = c[j]; if (b.C > prev.L && b.C > b.O) { killed = true; break; } }
-                    if (!killed) alive.Add(MakeBos(prev.L, false, tf));
+                    bool valid = true;
+                    for (int j = i + 1; j < c.Count; j++) if (c[j].C > prev.L) { valid = false; break; }
+                    if (valid) { outList.Add(MakeBos(prev.L, false, tf)); foundBear = true; }
                 }
             }
-            int keep = Math.Max(1, BosKeepPerTf);
-            for (int i = Math.Max(0, alive.Count - keep); i < alive.Count; i++) outList.Add(alive[i]);
-        }
-
-        // Triangles by timeframe (▲ H1, ▲▲ H4, ▲▲▲ D, ▲▲▲▲ W, ▲▲▲▲▲ M), then "BO L/S <tf>".
-        private static string BoLabel(bool bull, string tf)
-        {
-            string t = bull ? "\u25B2" : "\u25BC";
-            int n = tf == "M" ? 5 : tf == "W" ? 4 : tf == "D" ? 3 : tf == "H4" ? 2 : 1;
-            return new string(t[0], n) + " BO " + (bull ? "L" : "S") + " " + tf;
         }
 
         private LevelEntry MakeBos(double chartPrice, bool bull, string tf)
@@ -1797,12 +1379,9 @@ namespace ATAS.Indicators.Technical
             {
                 RawStrike = ChartToRaw(chartPrice),
                 Type = bull ? "BL" : "BS",
-                Label = BoLabel(bull, tf),
+                Label = "BOS " + tf + (bull ? " L" : " S"),
                 Magnitude = 0,
-                GexSign = 0,
-                IsLocal = true,
-                BoHigherTf = tf == "M" || tf == "W" || tf == "D",
-                BoWidth = tf == "M" ? Math.Max(1, LineWidthGex) + 2 : tf == "W" ? Math.Max(1, LineWidthGex) + 1 : tf == "D" ? Math.Max(1, LineWidthGex) : Math.Max(1, LineWidthGex)
+                GexSign = 0
             };
         }
 
@@ -1814,8 +1393,7 @@ namespace ATAS.Indicators.Technical
                 Type = type,        // PDH/PDL/PWH/PWL
                 Label = type,
                 Magnitude = 0,
-                GexSign = 0,
-                IsLocal = true
+                GexSign = 0
             };
         }
 
@@ -1871,31 +1449,35 @@ namespace ATAS.Indicators.Technical
         // = clientEngineService.computeAllBOS: W / D / H4 / H1, all of them.
         private void ComputeLocalBos(int barCount)
         {
-            string key = $"{barCount}|{ShowBosM}{ShowBosW}{ShowBosD}{ShowBosH4}{ShowBosH1}|{BosKeepPerTf}";
-            if (key == _bosComputedKey) return;
-            _bosComputedKey = key;
+            if (barCount == _bosLastComputedBars) return;   // recompute only when bars change
+            _bosLastComputedBars = barCount;
             _localBos.Clear();
-            if (ShowBosM)  DetectBosInto(AggregateByFuturesKey(barCount, true), "M", _localBos);
-            if (ShowBosW)  DetectBosInto(AggregateByFuturesKey(barCount, false), "W", _localBos);
-            if (ShowBosD)  DetectBosInto(AggregateByEtPeriod(barCount, 1440), "D", _localBos);
-            if (ShowBosH4) DetectBosInto(AggregateByEtPeriod(barCount, 240), "H4", _localBos);
-            if (ShowBosH1) DetectBosInto(AggregateByEtPeriod(barCount, 60), "H1", _localBos);
+            // H1/H4: from the chart's OWN intraday candles — identical to the
+            // terminal (same ES minutes, same 18:00 ET anchor, same algorithm).
+            var h4 = AggregateByEtPeriod(barCount, 240);
+            var h1 = AggregateByEtPeriod(barCount, 60);
+            DetectBosInto(h4, "H4", _localBos);
+            DetectBosInto(h1, "H1", _localBos);
+
+            // TODO (WS): D/W. The terminal computes daily/weekly BOS from Yahoo
+            // ^GSPC CASH daily (fetchDailyCandles, interval=1d), NOT from the
+            // chart's futures bars — so aggregating the chart here would NOT match
+            // the terminal. To reproduce exactly, fetch ^GSPC (SPX) / ^NDX (NDX)
+            // 1y/1d from Yahoo, apply the S: spread, then DetectBosInto(.., "D"/"W").
+            // Skipped for now so we never show discrepant D/W levels.
+
+            Log($"BOS local: bars={barCount} h4={h4.Count} h1={h1.Count} found={_localBos.Count} ticker={ResolveTicker()}");
         }
-        private string _bosComputedKey = "";
 
         // BOS levels come from native chart candles (ES/NQ) — already in chart price,
         // no spread. ChartToRaw maps to RawStrike space so the shared ConvertPrice()
         // round-trips back to the same price (ES/NQ/SPX/NDX pass-through; SPY x10, QQQ x40).
         private double ChartToRaw(double chartPrice)
         {
-            double esSp = EffectiveEsSpread, nqSp = EffectiveNqSpread;
-            double ratio = _ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0;
             switch (ResolveTicker())
             {
-                case "SPX": return esSp <= 0 ? chartPrice : chartPrice + esSp;
-                case "SPY": return esSp <= 0 ? chartPrice : chartPrice * 10.0 + esSp;
-                case "NDX": return nqSp <= 0 ? chartPrice : chartPrice + nqSp;
-                case "QQQ": return nqSp <= 0 ? chartPrice : chartPrice * ratio + nqSp;
+                case "SPY": return chartPrice * 10.0;
+                case "QQQ": return chartPrice * 40.0;
                 default:    return chartPrice;
             }
         }
@@ -1907,19 +1489,16 @@ namespace ATAS.Indicators.Technical
             // written). So for the futures tickers we just pass the raw strike
             // through. SPX / NDX stay raw; SPY = SPX / 10; QQQ = NDX / 40.
             // SnapToTick rounds to the instrument's tick grid afterwards.
-            // Strikes arrive in FUTURES points (ES / NQ). On a cash or ETF chart the spread from the
-            // data string is taken off; with no spread known the strikes stay as they are (identity),
-            // never shifted by a built-in number. Ratio NDX→QQQ from R:, else 40.
             double cv;
-            double esSp = EffectiveEsSpread, nqSp = EffectiveNqSpread;
-            double ratio = _ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0;
             switch (ResolveTicker())
             {
-                case "SPX": cv = esSp <= 0 ? rawStrike : rawStrike - esSp; break;
-                case "SPY": cv = esSp <= 0 ? rawStrike : (rawStrike - esSp) / 10.0; break;
-                case "NDX": cv = nqSp <= 0 ? rawStrike : rawStrike - nqSp; break;
-                case "QQQ": cv = nqSp <= 0 ? rawStrike : (rawStrike - nqSp) / ratio; break;
-                default:    cv = rawStrike; break;   // ES / NQ: already in futures space
+                case "SPX": cv = rawStrike; break;
+                case "SPY": cv = rawStrike / 10.0; break;
+                case "ES":  cv = rawStrike; break;                          // already in ES futures space
+                case "NDX": cv = rawStrike; break;
+                case "QQQ": cv = rawStrike / 40.0; break;
+                case "NQ":  cv = rawStrike; break;                          // already in NQ futures space
+                default:    cv = rawStrike; break;
             }
             return SnapPrice(cv);
         }
@@ -1962,9 +1541,6 @@ namespace ATAS.Indicators.Technical
 
         private struct LevelEntry
         {
-            public bool IsLocal;        // computed from the chart's bars (structure, breakouts), not from the feed
-            public bool BoHigherTf;     // M/W/D breakout: solid, heavier
-            public int BoWidth;
             public double RawStrike;   // raw SPX or NDX from cloud
             public string Type;
             public string Label;

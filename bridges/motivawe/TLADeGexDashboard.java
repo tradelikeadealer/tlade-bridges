@@ -143,6 +143,8 @@ public class TLADeGexDashboard extends Study
   final static String SHOW_CONFLUENCE = "showConfluence", CONF_MIN_SIZE = "confluenceMinSize", CONF_EM_PCT = "confluenceEmPct";
   final static String ENABLE_ALERTS = "enableAlerts", ALERT_WALLS = "alertWalls", ALERT_SYSTEM = "alertSystem", ALERT_BOS = "alertBos";
   final static String SIG_WALL = "tladeWall", SIG_SYSTEM = "tladeSystem", SIG_BO = "tladeBreakout";
+  final static String SHOW_SESSIONS = "showSessions", SHOW_BOX_ASIA = "showBoxAsia", SHOW_BOX_EU = "showBoxEU",
+                      SHOW_BOX_PRE = "showBoxPre", SHOW_BOX_US = "showBoxUS", SHOW_SESSIONS_HIST = "showSessionsHist";
   final static String SHOW_STATUS    = "showStatus";
   final static String STATUS_POS     = "statusPos";   // TL / TR / BL / BR
 
@@ -185,6 +187,14 @@ public class TLADeGexDashboard extends Study
     String kind;        // "wall" | "system" | "bo" | "" — what the cross alerts watch
     String alertName;
   }
+
+  private static class DrawBox
+  {
+    long t0, t1;        // first and last bar time of the session run
+    double hi, lo;
+    Color color;
+  }
+  private volatile List<DrawBox> drawBoxes = new ArrayList<>();
 
   private static class DrawZone
   {
@@ -332,6 +342,14 @@ public class TLADeGexDashboard extends Study
     confGrp.addRow(new IntegerDescriptor(CONF_MIN_SIZE, "Min cluster size for box", 3, 2, 5, 1));
     confGrp.addRow(new DoubleDescriptor(CONF_EM_PCT, "Band Width (% of EM)", 7.0, 1.0, 30.0, 0.5)
         .setDescription("Total band as a percentage of the EM range (EM High − EM Low), split half above and half below (7% = ±3.5%). No EM in the data → no zones."));
+
+    SettingGroup sessGrp = visTab.addGroup("Session Boxes");
+    sessGrp.addRow(new BooleanDescriptor(SHOW_SESSIONS, "Show Session Boxes", false));
+    sessGrp.addRow(new BooleanDescriptor(SHOW_BOX_ASIA, "Asia (18:00-03:00 ET)", true));
+    sessGrp.addRow(new BooleanDescriptor(SHOW_BOX_EU, "Europe (03:00-08:00 ET)", true));
+    sessGrp.addRow(new BooleanDescriptor(SHOW_BOX_PRE, "Pre-Market (08:00-09:30 ET)", true));
+    sessGrp.addRow(new BooleanDescriptor(SHOW_BOX_US, "US RTH (09:30-16:00 ET)", true));
+    sessGrp.addRow(new BooleanDescriptor(SHOW_SESSIONS_HIST, "Show Historical (prev days)", false));
 
     SettingGroup alertGrp = visTab.addGroup("Alerts");
     alertGrp.addRow(new BooleanDescriptor(ENABLE_ALERTS, "Enable Level Cross Alerts", false));
@@ -889,6 +907,7 @@ public class TLADeGexDashboard extends Study
     drawLevels = newLevels;
     drawProfile = newProfile;
     drawZones = newZones;
+    drawBoxes = getSettings().getBoolean(SHOW_SESSIONS, false) ? computeSessionBoxes(ctx.getDataSeries()) : new ArrayList<>();
 
   }
 
@@ -1212,6 +1231,41 @@ public class TLADeGexDashboard extends Study
         out.add(new Object[] { f[0], boLabel(bull, tfs[k]), bull, tfs[k] });
       }
     }
+    return out;
+  }
+
+  // Session boxes: Asia / Europe / Pre / US hi-lo rectangles of the last futures day on the chart
+  // (18:00 ET boundary), or of every day with "Show Historical". Same sessions as the TradingView
+  // indicator: Asia 18:00-03:00, EU 03:00-08:00, Pre 08:00-09:30, US 09:30-16:00 ET.
+  private List<DrawBox> computeSessionBoxes(DataSeries series)
+  {
+    List<DrawBox> out = new ArrayList<>();
+    if (series == null || series.size() == 0) return out;
+    boolean hist = getSettings().getBoolean(SHOW_SESSIONS_HIST, false);
+    boolean[] on = { getSettings().getBoolean(SHOW_BOX_ASIA, true), getSettings().getBoolean(SHOW_BOX_EU, true),
+                     getSettings().getBoolean(SHOW_BOX_PRE, true), getSettings().getBoolean(SHOW_BOX_US, true) };
+    Color[] cols = { new Color(0xf5, 0x9e, 0x0b, 26), new Color(0x3b, 0x82, 0xf6, 26), new Color(0xa8, 0x55, 0xf7, 20), new Color(0x22, 0xc5, 0x5e, 20) };
+    java.time.ZoneId et = java.time.ZoneId.of("America/New_York");
+    int n = series.size();
+    long lastDay = futuresDay(series.getStartTime(n - 1));
+    int curType = -1; DrawBox cur = null;
+    for (int i = 0; i < n; i++) {
+      long t = series.getStartTime(i);
+      if (!hist && futuresDay(t) != lastDay) continue;
+      java.time.ZonedDateTime z = java.time.Instant.ofEpochMilli(t).atZone(et);
+      int mins = z.getHour() * 60 + z.getMinute();
+      int type = (mins >= 1080 || mins < 180) ? 0 : mins < 480 ? 1 : mins < 570 ? 2 : mins < 960 ? 3 : -1;
+      if (type != curType) {
+        if (cur != null) out.add(cur);
+        cur = null; curType = type;
+        if (type >= 0 && on[type]) { cur = new DrawBox(); cur.t0 = t; cur.t1 = t; cur.hi = series.getHigh(i); cur.lo = series.getLow(i); cur.color = cols[type]; }
+      } else if (cur != null) {
+        cur.t1 = t;
+        if (series.getHigh(i) > cur.hi) cur.hi = series.getHigh(i);
+        if (series.getLow(i) < cur.lo) cur.lo = series.getLow(i);
+      }
+    }
+    if (cur != null) out.add(cur);
     return out;
   }
 
@@ -1655,7 +1709,8 @@ public class TLADeGexDashboard extends Study
       gc.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
       gc.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-      // Confluence zones and profile first (underlay), then level lines/labels on top.
+      // Session boxes, confluence zones and profile first (underlay), then level lines/labels on top.
+      paintBoxes(gc, ctx, b);
       paintZones(gc, ctx, b);
       if (!drawProfile.isEmpty())
         paintProfile(gc, ctx, b);
@@ -1727,6 +1782,22 @@ public class TLADeGexDashboard extends Study
 
       if (oldAA != null)
         gc.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, oldAA);
+    }
+
+    private void paintBoxes(Graphics2D gc, DrawContext ctx, Rectangle b)
+    {
+      List<DrawBox> boxes = drawBoxes;
+      if (boxes == null || boxes.isEmpty()) return;
+      for (DrawBox bx : boxes) {
+        int x0 = ctx.translateTime(bx.t0), x1 = ctx.translateTime(bx.t1);
+        int yT = ctx.translateValue(bx.hi), yB = ctx.translateValue(bx.lo);
+        if (x1 < x0) { int tmp = x0; x0 = x1; x1 = tmp; }
+        if (x1 - x0 < 2) x1 = x0 + 2;
+        gc.setColor(bx.color);
+        gc.fillRect(x0, yT, x1 - x0, Math.max(1, yB - yT));
+        gc.setColor(new Color(bx.color.getRed(), bx.color.getGreen(), bx.color.getBlue(), 90));
+        gc.drawRect(x0, yT, x1 - x0, Math.max(1, yB - yT));
+      }
     }
 
     private void paintZones(Graphics2D gc, DrawContext ctx, Rectangle b)
