@@ -56,6 +56,7 @@ credit; the root-level source is the TLADe-patched build. See
 | [NinjaTrader 8](bridges/ninjatrader/) | **Beta** | NT8 chart indicator + local receiver (Rithmic, CQG, Kinetick via NT8) | Kris (C# + Python) |
 | [ATAS](bridges/atas/) | **Ready** | ATAS Platform — Bridge + GEX Dashboard + Quantum Field Ladder (Rithmic / CQG via ATAS data) | Mihai (C# + Python) |
 | [MotiveWave](bridges/motivawe/) | **Ready (cross-OS, MW Java 25+)** | TLADe levels overlay on MotiveWave charts. Single jar for macOS, Windows and Linux. | Herat Acharya (Java) |
+| [Quantower](bridges/quantower/) | **Community test** | Quantower chart indicator — feed levels + GEX profile, Live fetch from the TLADe endpoint. Published as delivered by the author (no `original/` split). | Dogan Cile (C#) |
 | [CQG](bridges/cqg/) | Wanted | CQG API direct | — |
 
 ### Independent versions
