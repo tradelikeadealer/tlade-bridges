@@ -1,5 +1,4 @@
 //@version=6
-// TLADe GEX Levels — ES/SPX/SPY — release 3.5.0 (13 September 2026)
 indicator("GEX Levels + Breakout Structure + Session AVWAP — ES/SPX/SPY", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -13,13 +12,8 @@ tickerChoice = input.string("ES", "Display Ticker", options=["ES", "SPX", "SPY"]
 // function falls back to identity (= ES strikes shown unchanged).
 var float esSpxSpread = 0.0
 
-// The indicator is an intraday tool. On charts above 1H (4H, D, W…) it draws nothing unless
-// the user asks for it — GEX lines, profile and session boxes on a daily chart are noise.
-showAboveH1 = input.bool(false, "Draw on timeframes above 1H", group=groupTicker, tooltip="Off: on 4H, Daily, Weekly and Monthly charts the indicator stays silent. Turn on to draw there anyway.")
-bool tfActive = showAboveH1 or timeframe.in_seconds() <= 3600
-
 groupGex = "GEX Data"
-string WEEKLY_DATA = input.text_area("S:6.20|L:7688,ZG,ZERO GAMMA,Zero Gamma~Key pivot where dealer gamma flips~Price magnet,0;7726,MP,MAX PAIN,Max Pain~Strike with maximum option pain~Expiry target,0;7646,EH,EM HIGH,Expected Move HIGH~1-sigma upper boundary~Statistical resistance,0;7550,EL,EM LOW,Expected Move LOW~1-sigma lower boundary~Statistical support,0;7712,VH,VOL HIGH,Vol Band HIGH~Volatility-based resistance~ZG + 25% EM,0;7664,VL,VOL LOW,Vol Band LOW~Volatility-based support~ZG - 25% EM,0;7701,DF,Delta Flip,Delta Flip~Where net dealer delta flips sign~Directional pivot,0;7586,CM,Charm Magnet,Charm Magnet (Pressure)~Charm-driven intraday magnet~Pin risk,0;7656,PW,Put Wall,Strike: 7656~From Spot: +0.66%~Tot GEX: 1.45B~C/P Ratio: 0.4~Hold: 51% | Break: 49%,1450.6;7706,PW,Put Wall,Strike: 7706~From Spot: +1.31%~Tot GEX: 1.23B~C/P Ratio: 1.0~Hold: 46% | Break: 54%,1231.1;7606,PW,Put Wall,Strike: 7606~From Spot: +0.00%~Tot GEX: 934.63M~C/P Ratio: 0.2~Hold: 43% | Break: 57%,934.6;7651,PW,Put Wall,Strike: 7651~From Spot: +0.59%~Tot GEX: 629.15M~C/P Ratio: 0.2~Hold: 42% | Break: 58%,629.2;7631,PW,Put Wall,Strike: 7631~From Spot: +0.33%~Tot GEX: 587.93M~C/P Ratio: 0.1~Hold: 41% | Break: 59%,587.9;7686,PW,Put Wall,Strike: 7686~From Spot: +1.05%~Tot GEX: 518.87M~C/P Ratio: 0.6~Hold: 42% | Break: 58%,518.9;7636,PW,Put Wall,Strike: 7636~From Spot: +0.39%~Tot GEX: 492.92M~C/P Ratio: 0.1~Hold: 41% | Break: 59%,492.9;7661,PW,Put Wall,Strike: 7661~From Spot: +0.72%~Tot GEX: 459.64M~C/P Ratio: 0.2~Hold: 56% | Break: 44%,459.6;7681,PW,Put Wall,Strike: 7681~From Spot: +0.99%~Tot GEX: 450.57M~C/P Ratio: 0.9~Hold: 42% | Break: 58%,450.6;7641,PW,Put Wall,Strike: 7641~From Spot: +0.46%~Tot GEX: 391.01M~C/P Ratio: 0.3~Hold: 41% | Break: 59%,391.0;7696,CW,Call Wall,Strike: 7696~From Spot: +1.18%~Tot GEX: 385.72M~C/P Ratio: 1.1~Hold: 43% | Break: 57%,385.7;7666,PW,Put Wall,Strike: 7666~From Spot: +0.79%~Tot GEX: 360.38M~C/P Ratio: 0.4~Hold: 49% | Break: 51%,360.4;7616,PW,Put Wall,Strike: 7616~From Spot: +0.13%~Tot GEX: 359.00M~C/P Ratio: 0.1~Hold: 55% | Break: 45%,359.0;7626,PW,Put Wall,Strike: 7626~From Spot: +0.26%~Tot GEX: 327.56M~C/P Ratio: 0.3~Hold: 47% | Break: 53%,327.6;7646,PW,Put Wall,Strike: 7646~From Spot: +0.53%~Tot GEX: 315.93M~C/P Ratio: 0.5~Hold: 40% | Break: 60%,315.9;7506,PW,Put Wall,Strike: 7506~From Spot: -1.31%~Tot GEX: 2.22B~C/P Ratio: 0.0~Hold: 54% | Break: 46%,2215.5;7556,PW,Put Wall,Strike: 7556~From Spot: -0.66%~Tot GEX: 1.18B~C/P Ratio: 0.0~Hold: 53% | Break: 47%,1175.3;7496,PW,Put Wall,Strike: 7496~From Spot: -1.45%~Tot GEX: 885.92M~C/P Ratio: 0.0~Hold: 50% | Break: 50%,885.9;7576,PW,Put Wall,Strike: 7576~From Spot: -0.39%~Tot GEX: 756.00M~C/P Ratio: 0.0~Hold: 49% | Break: 51%,756.0;7551,PW,Put Wall,Strike: 7551~From Spot: -0.72%~Tot GEX: 629.31M~C/P Ratio: 0.0~Hold: 49% | Break: 51%,629.3;7586,PW,Put Wall,Strike: 7586~From Spot: -0.26%~Tot GEX: 596.11M~C/P Ratio: 0.0~Hold: 56% | Break: 44%,596.1;7581,PW,Put Wall,Strike: 7581~From Spot: -0.33%~Tot GEX: 494.97M~C/P Ratio: 0.2~Hold: 50% | Break: 50%,495.0;7561,PW,Put Wall,Strike: 7561~From Spot: -0.59%~Tot GEX: 427.38M~C/P Ratio: 0.0~Hold: 56% | Break: 44%,427.4;7541,PW,Put Wall,Strike: 7541~From Spot: -0.85%~Tot GEX: 386.98M~C/P Ratio: 0.0~Hold: 49% | Break: 51%,387.0;7596,PW,Put Wall,Strike: 7596~From Spot: -0.13%~Tot GEX: 374.95M~C/P Ratio: 0.1~Hold: 56% | Break: 44%,375.0;7546,PW,Put Wall,Strike: 7546~From Spot: -0.79%~Tot GEX: 361.67M~C/P Ratio: 0.1~Hold: 49% | Break: 51%,361.7;7566,PW,Put Wall,Strike: 7566~From Spot: -0.53%~Tot GEX: 348.89M~C/P Ratio: 0.1~Hold: 49% | Break: 51%,348.9;7531,PW,Put Wall,Strike: 7531~From Spot: -0.99%~Tot GEX: 309.25M~C/P Ratio: 0.0~Hold: 49% | Break: 51%,309.3;7571,PW,Put Wall,Strike: 7571~From Spot: -0.46%~Tot GEX: 233.41M~C/P Ratio: 0.0~Hold: 49% | Break: 51%,233.4;7526,PW,Put Wall,Strike: 7526~From Spot: -1.05%~Tot GEX: 198.17M~C/P Ratio: 0.1~Hold: 49% | Break: 51%,198.2|P:6306,-0.1,-1;6756,-0.2,-1;6806,-0.5,-1;6906,-0.1,-1;7006,-0.2,-1;7031,-0.2,-1;7056,-0.2,-1;7126,-0.1,-1;7156,-0.1,-1;7166,-0.4,-1;7206,-0.3,-1;7226,-0.3,-1;7256,-0.2,-1;7266,-0.7,-1;7276,-0.1,-1;7281,-0.1,-1;7306,-0.2,-1;7336,-0.4,-1;7346,-0.2,-1;7356,-0.4,-1;7381,-0.3,-1;7386,-0.1,-1;7406,-1.3,-1;7416,-0.1,-1;7426,-0.5,-1;7431,-0.3,-1;7436,-0.4,-1;7441,-0.5,-1;7446,-0.5,-1;7451,-0.2,-1;7456,-1.1,-1;7461,-0.3,-1;7466,-0.2,-1;7471,-0.4,-1;7476,-0.5,-1;7481,-0.7,-1;7486,-0.7,-1;7491,-0.5,-1;7496,-4.3,-1;7501,-0.4,-1;7506,-10.0,-1;7511,-0.3,-1;7516,-0.7,-1;7521,-0.5,-1;7526,-0.8,-1;7531,-1.4,-1;7536,-0.7,-1;7541,-1.8,-1;7546,-1.3,-1;7551,-3.0,-1;7556,-5.4,-1;7561,-2.0,-1;7566,-1.4,-1;7571,-1.0,-1;7576,-3.5,-1;7581,-1.7,-1;7586,-2.6,-1;7591,-0.5,-1;7596,-1.6,-1;7601,-0.6,-1;7606,-3.3,-1;7611,-0.9,-1;7616,-1.4,-1;7621,-0.7,-1;7626,-0.9,-1;7631,-2.2,-1;7636,-1.8,-1;7641,-0.9,-1;7646,-0.5,-1;7651,-2.2,-1;7656,-3.3,-1;7661,-1.4,-1;7666,-0.7,-1;7671,-0.6,-1;7676,-0.2,-1;7681,-0.1,-1;7686,-0.7,-1;7696,0.1,1;7701,0.3,1;7706,-0.1,-1;7711,-0.1,-1;7721,-0.1,-1;7726,1.1,1;7736,0.2,1;7741,0.1,1;7746,0.3,1;7751,-0.8,-1;7756,1.8,1;7761,2.4,1;7766,0.2,1;7771,0.3,1;7776,0.4,1;7781,0.4,1;7791,0.3,1;7796,0.1,1;7801,0.1,1;7806,0.5,1;7816,0.1,1;7826,0.1,1;7831,1.1,1;7836,0.7,1;7856,0.3,1;7861,0.2,1;7876,0.1,1;7881,0.1,1;7896,0.1,1;7906,0.6,1;7916,0.1,1;7926,0.1,1;7956,0.1,1;8106,0.1,1")
+string WEEKLY_DATA = input.text_area("S:15.58|L:7529,ZG,ZERO GAMMA,Zero Gamma~Key pivot where dealer gamma flips~Price magnet,0;7496,MP,MAX PAIN,Max Pain~Strike with maximum option pain~Expiry target,0;7464,EH,EM HIGH,Expected Move HIGH~1-sigma upper boundary~Statistical resistance,0;7335,EL,EM LOW,Expected Move LOW~1-sigma lower boundary~Statistical support,0;7561,VH,VOL HIGH,Vol Band HIGH~Volatility-based resistance~ZG + 25% EM,0;7496,VL,VOL LOW,Vol Band LOW~Volatility-based support~ZG - 25% EM,0;7466,PW,Put Wall,Strike: 7466~From Spot: +0.26%~Tot GEX: -540.91M~C/P Ratio: 0.5~Hold: 71% | Break: 29%,540.9;7516,CW,Call Wall,Strike: 7516~From Spot: +0.93%~Tot GEX: 52.45M~C/P Ratio: 1.1~Hold: 77% | Break: 23%,52.4;7556,CW,Call Wall,Strike: 7556~From Spot: +1.46%~Tot GEX: 713.88M~C/P Ratio: 12.4~Hold: 69% | Break: 31%,713.9;7541,CW,Call Wall,Strike: 7541~From Spot: +1.26%~Tot GEX: 326.28M~C/P Ratio: 2.5~Hold: 70% | Break: 30%,326.3;7476,CW,Call Wall,Strike: 7476~From Spot: +0.39%~Tot GEX: 337.52M~C/P Ratio: 3.1~Hold: 64% | Break: 36%,337.5;7566,CW,Call Wall,Strike: 7566~From Spot: +1.60%~Tot GEX: 231.51M~C/P Ratio: 2.2~Hold: 68% | Break: 32%,231.5;7486,PW,Put Wall,Strike: 7486~From Spot: +0.52%~Tot GEX: -296.67M~C/P Ratio: 0.4~Hold: 76% | Break: 24%,296.7;7511,PW,Put Wall,Strike: 7511~From Spot: +0.86%~Tot GEX: -220.45M~C/P Ratio: 0.4~Hold: 79% | Break: 21%,220.5;7616,CW,Call Wall,Strike: 7616~From Spot: +2.27%~Tot GEX: 299.04M~C/P Ratio: 4.1~Hold: 62% | Break: 38%,299.0;7501,CW,Call Wall,Strike: 7501~From Spot: +0.73%~Tot GEX: 75.07M~C/P Ratio: 1.4~Hold: 76% | Break: 24%,75.1;7506,CW,Call Wall,Strike: 7506~From Spot: +0.79%~Tot GEX: 114.21M~C/P Ratio: 1.7~Hold: 60% | Break: 40%,114.2;7491,CW,Call Wall,Strike: 7491~From Spot: +0.59%~Tot GEX: 23.22M~C/P Ratio: 1.1~Hold: 77% | Break: 23%,23.2;7456,PW,Put Wall,Strike: 7456~From Spot: +0.12%~Tot GEX: -80.07M~C/P Ratio: 0.7~Hold: 75% | Break: 25%,80.1;7646,CW,Call Wall,Strike: 7646~From Spot: +2.67%~Tot GEX: 364.89M~C/P Ratio: 58.0~Hold: 60% | Break: 40%,364.9;7481,PW,Put Wall,Strike: 7481~From Spot: +0.46%~Tot GEX: -166.17M~C/P Ratio: 0.4~Hold: 75% | Break: 25%,166.2;7416,PW,Put Wall,Strike: 7416~From Spot: -0.42%~Tot GEX: -966.48M~C/P Ratio: 0.3~Hold: 53% | Break: 47%,966.5;7366,PW,Put Wall,Strike: 7366~From Spot: -1.09%~Tot GEX: -906.22M~C/P Ratio: 0.1~Hold: 56% | Break: 44%,906.2;7316,PW,Put Wall,Strike: 7316~From Spot: -1.76%~Tot GEX: -679.97M~C/P Ratio: 0.0~Hold: 57% | Break: 43%,680.0;7391,PW,Put Wall,Strike: 7391~From Spot: -0.75%~Tot GEX: -595.06M~C/P Ratio: 0.1~Hold: 57% | Break: 43%,595.1;7446,PW,Put Wall,Strike: 7446~From Spot: -0.01%~Tot GEX: -295.97M~C/P Ratio: 0.4~Hold: 58% | Break: 42%,296.0;7401,PW,Put Wall,Strike: 7401~From Spot: -0.62%~Tot GEX: -512.41M~C/P Ratio: 0.1~Hold: 62% | Break: 38%,512.4;7341,PW,Put Wall,Strike: 7341~From Spot: -1.42%~Tot GEX: -590.78M~C/P Ratio: 0.0~Hold: 59% | Break: 41%,590.8;7426,PW,Put Wall,Strike: 7426~From Spot: -0.28%~Tot GEX: -342.07M~C/P Ratio: 0.2~Hold: 55% | Break: 45%,342.1;7291,PW,Put Wall,Strike: 7291~From Spot: -2.09%~Tot GEX: -445.13M~C/P Ratio: 0.0~Hold: 57% | Break: 43%,445.1;7441,PW,Put Wall,Strike: 7441~From Spot: -0.08%~Tot GEX: -276.49M~C/P Ratio: 0.2~Hold: 57% | Break: 43%,276.5;7241,PW,Put Wall,Strike: 7241~From Spot: -2.77%~Tot GEX: -435.81M~Hold: 56% | Break: 44%,435.8;7351,PW,Put Wall,Strike: 7351~From Spot: -1.29%~Tot GEX: -418.41M~C/P Ratio: 0.0~Hold: 61% | Break: 39%,418.4;7216,PW,Put Wall,Strike: 7216~From Spot: -3.10%~Tot GEX: -421.62M~Hold: 56% | Break: 44%,421.6;7371,PW,Put Wall,Strike: 7371~From Spot: -1.02%~Tot GEX: -274.51M~C/P Ratio: 0.1~Hold: 62% | Break: 38%,274.5;7356,PW,Put Wall,Strike: 7356~From Spot: -1.22%~Tot GEX: -333.86M~C/P Ratio: 0.0~Hold: 61% | Break: 39%,333.9|P:6116,-0.2,-1;6216,-0.1,-1;6266,-0.1,-1;6316,-0.2,-1;6341,-0.3,-1;6416,-0.3,-1;6441,-0.1,-1;6466,-0.2,-1;6516,-0.4,-1;6616,-0.4,-1;6666,-0.3,-1;6691,-0.3,-1;6716,-0.2,-1;6766,-0.3,-1;6816,-0.3,-1;6866,-0.3,-1;6916,-0.8,-1;6941,-0.4,-1;6966,-0.5,-1;6991,-0.2,-1;6996,-0.1,-1;7016,-0.7,-1;7041,-0.6,-1;7046,-0.5,-1;7056,-0.1,-1;7066,-0.7,-1;7076,-0.2,-1;7086,-1.6,-1;7091,-0.1,-1;7106,-0.1,-1;7116,-0.9,-1;7126,-0.2,-1;7136,-0.1,-1;7141,-0.2,-1;7146,-0.1,-1;7151,-0.3,-1;7166,-1.7,-1;7171,-0.2,-1;7176,-2.3,-1;7181,-0.1,-1;7186,-0.2,-1;7191,-2.0,-1;7196,-0.2,-1;7201,-0.1,-1;7206,-0.2,-1;7211,-0.2,-1;7216,-4.4,-1;7221,-0.2,-1;7226,-1.6,-1;7231,-0.2,-1;7236,-1.2,-1;7241,-4.5,-1;7246,-0.4,-1;7251,-0.4,-1;7256,-0.4,-1;7261,-0.5,-1;7266,-3.5,-1;7271,-1.0,-1;7276,-0.6,-1;7281,-0.9,-1;7286,-0.6,-1;7291,-4.6,-1;7296,-0.9,-1;7301,-0.7,-1;7306,-0.6,-1;7311,-0.5,-1;7316,-7.0,-1;7321,-0.8,-1;7326,-2.7,-1;7331,-1.5,-1;7336,-3.1,-1;7341,-6.1,-1;7346,-0.8,-1;7351,-4.3,-1;7356,-3.5,-1;7361,-2.1,-1;7366,-9.4,-1;7371,-2.8,-1;7376,-0.8,-1;7381,-0.9,-1;7386,-0.7,-1;7391,-6.2,-1;7396,-1.7,-1;7401,-5.3,-1;7406,-2.0,-1;7411,-2.6,-1;7416,-10.0,-1;7421,-1.7,-1;7426,-3.5,-1;7431,-1.0,-1;7436,-0.9,-1;7441,-2.9,-1;7446,-3.1,-1;7451,-0.8,-1;7456,-0.8,-1;7461,-0.6,-1;7466,-5.6,-1;7471,-1.2,-1;7476,3.5,1;7481,-1.7,-1;7486,-3.1,-1;7491,0.2,1;7496,3.0,1;7501,0.8,1;7506,1.2,1;7511,-2.3,-1;7516,0.5,1;7521,0.7,1;7526,0.5,1;7531,0.4,1;7536,1.0,1;7541,3.4,1;7546,1.2,1;7551,0.6,1;7556,7.4,1;7561,0.3,1;7566,2.4,1;7571,1.5,1;7576,1.1,1;7581,1.0,1;7586,0.9,1;7596,1.2,1;7601,0.3,1;7606,1.4,1;7611,1.2,1;7616,3.1,1;7621,0.7,1;7626,0.9,1;7631,0.7,1;7636,0.8,1;7641,1.0,1;7646,3.8,1;7651,0.8,1;7656,0.8,1;7661,1.3,1;7666,2.0,1;7671,0.6,1;7676,0.8,1;7681,2.3,1;7686,0.6,1;7691,1.2,1;7696,0.6,1;7701,2.0,1;7706,0.4,1;7711,0.4,1;7716,2.3,1;7721,1.8,1;7726,0.6,1;7731,0.3,1;7736,0.2,1;7741,0.8,1;7746,0.9,1;7751,0.8,1;7756,0.2,1;7766,0.9,1;7771,0.1,1;7776,0.4,1;7781,1.2,1;7786,0.3,1;7791,0.4,1;7796,0.3,1;7801,1.1,1;7806,0.5,1;7811,0.2,1;7816,1.1,1;7821,1.1,1;7826,0.3,1;7841,0.3,1;7866,0.2,1;7891,0.5,1;7916,0.1,1;7966,0.1,1")
 gexDataInput = input.text_area("", title="Live GEX Override", group=groupGex, tooltip="Paste live data to override weekly. Leave empty for weekly.")
 string gexDataRaw = gexDataInput != "" ? gexDataInput : WEEKLY_DATA
 // Robustness: iOS copy/paste can URL-encode the string ("|" -> "%7C",
@@ -37,8 +31,8 @@ if str.startswith(gexDataActive, "s:")
 groupGexVis = "GEX Visibility"
 showGexLevels = input.bool(true, "Call/Put Walls", group=groupGexVis)
 showSystemLevels = input.bool(true, "System (ZG, MaxPain, EM, VolBands)", group=groupGexVis)
-showStructureLevels = input.bool(false, "Structure (PDH/PDL/PWH/PWL)", group=groupGexVis)
-showCharmMagnet = input.bool(false, "Charm Magnet", group=groupGexVis)
+showStructureLevels = input.bool(true, "Structure (PDH/PDL/PWH/PWL)", group=groupGexVis)
+showCharmMagnet = input.bool(true, "Charm Magnet", group=groupGexVis)
 showDeltaFlip = input.bool(true, "Delta Flip", group=groupGexVis)
 showProfile = input.bool(true, "GEX Profile Bars", group=groupGexVis)
 maxLevelsChoice = input.string("10", "Max GEX Levels", options=["5", "10", "15", "20", "All"], group=groupGexVis)
@@ -54,21 +48,17 @@ barThickness = input.int(8, "Bar Height", group=groupProfile, inline="p1")
 profileOffset = input.int(15, "Offset", group=groupProfile)
 
 groupBOS = "Breakout Structure (BOS)"
-// One switch for the whole group, like Session Boxes and Session AVWAP. The per-timeframe
-// toggles below say WHICH breakouts, this one says WHETHER — H1/H4/D are preselected.
-showBOS = input.bool(false, "Show Breakout Structure", group=groupBOS)
 showBOS_M = input.bool(false, "Monthly", group=groupBOS, inline="bos0")
 showBOS_W = input.bool(false, "Weekly", group=groupBOS, inline="bos0")
-showBOS_D = input.bool(true, "Daily", group=groupBOS, inline="bos1")
-showBOS_H4 = input.bool(true, "4H", group=groupBOS, inline="bos1")
-showBOS_H1 = input.bool(true, "1H", group=groupBOS, inline="bos2")
-bosKeep = input.int(2, "Keep last N per timeframe", minval=1, maxval=10, group=groupBOS, tooltip="How many live breakouts to keep for each timeframe. When a new one forms, the oldest of that timeframe is dropped. Invalidated breakouts are removed regardless.")
+showBOS_D = input.bool(false, "Daily", group=groupBOS, inline="bos1")
+showBOS_H4 = input.bool(false, "4H", group=groupBOS, inline="bos1")
+showBOS_H1 = input.bool(false, "1H", group=groupBOS, inline="bos2")
 bosLineWidth = input.int(2, "BOS Line Width", minval=1, maxval=4, group=groupBOS)
 colorBOS_Bull = input.color(#22c55e, "Bull", group=groupBOS, inline="bosc")
 colorBOS_Bear = input.color(#ef4444, "Bear", group=groupBOS, inline="bosc")
 
 groupSess = "Session Boxes"
-showSessions = input.bool(false, "Show Session Boxes", group=groupSess)
+showSessions = input.bool(true, "Show Session Boxes", group=groupSess)
 showAsia = input.bool(true, "Asia", group=groupSess, inline="s1")
 showEU = input.bool(true, "Europe", group=groupSess, inline="s1")
 showPre = input.bool(true, "Pre-Mkt", group=groupSess, inline="s1")
@@ -110,18 +100,15 @@ labelSide = input.string("Left", "Label Side", options=["Left", "Right"], group=
 barColorStyle = input.string("Theme Colors", "Profile Bar Color", options=["Theme Colors", "Greyscale"], group=groupCol)
 
 groupConfluence = "Confluence Zones"
-showConfluence = input.bool(false, "Show Confluence Zones", group=groupConfluence)
+showConfluence = input.bool(true, "Show Confluence Zones", group=groupConfluence)
 confluenceMinSize = input.int(3, "Min cluster size for box", minval=2, maxval=5, group=groupConfluence, tooltip="Box drawn only when cluster has ≥N levels")
-confluenceEmPct = input.float(7.0, "Band Width (% of EM)", minval=1.0, maxval=30.0, step=0.5, group=groupConfluence, tooltip="Total band as a percentage of the EM range (EM High − EM Low), split half above and half below (7% = ±3.5%). No EM in the data → no confluence zones.")
+confluenceBandPoints = input.float(5.0, "Band Width (points)", minval=1.0, maxval=50.0, step=0.5, group=groupConfluence, tooltip="Total band in points. Half-band = this / 2 (e.g. 5 = ±2.5 pts).")
 colorConfluence3 = input.color(color.new(#facc15, 75), "3-level", group=groupConfluence, inline="cc1")
 colorConfluence4 = input.color(color.new(#fb923c, 70), "4-level", group=groupConfluence, inline="cc1")
 colorConfluence5 = input.color(color.new(#ef4444, 65), "5+ (UBER)", group=groupConfluence, inline="cc1")
 
 groupAlerts = "Alerts"
 enableAlerts = input.bool(false, "Enable Level Cross Alerts", group=groupAlerts)
-alertWalls = input.bool(true, "Call/Put Walls", group=groupAlerts, inline="al1")
-alertSystem = input.bool(true, "ZG / Max Pain / EM / Vol Bands", group=groupAlerts, inline="al1")
-alertBOS = input.bool(true, "Breakouts", group=groupAlerts, inline="al1")
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║  CORE FUNCTIONS                                                              ║
@@ -140,29 +127,6 @@ f_formatPrice(float esPrice) =>
 f_lineStyle(string s) =>
     s == "Solid" ? line.style_solid : s == "Dashed" ? line.style_dashed : line.style_dotted
 
-// One name per level. Labels read
-// "price + name" — the code (CW, ZG, EH…) is for the feed and the tooltip, not the
-// chart; showing both said the same thing twice ("7466 PW Put Wall").
-f_levelName(string code, string feedLabel) =>
-    switch code
-        "CW" => "Call Wall"
-        "PW" => "Put Wall"
-        "ZG" => "Zero Gamma"
-        "MP" => "Max Pain"
-        "EH" => "EM High Globex"
-        "EL" => "EM Low Globex"
-        "EHR" => "EM High RTH"
-        "ELR" => "EM Low RTH"
-        "VH" => "Vol High"
-        "VL" => "Vol Low"
-        "CM" => "Charm Magnet"
-        "DF" => "Delta Flip"
-        "PDH" => "Previous Day High"
-        "PDL" => "Previous Day Low"
-        "PWH" => "Previous Week High"
-        "PWL" => "Previous Week Low"
-        => feedLabel
-
 color colorPos = colorScheme == "Boreal" ? #22d3ee : colorScheme == "Lady Trader" ? #2dd4bf : #22c55e
 color colorNeg = colorScheme == "Boreal" ? #f472b6 : colorScheme == "Lady Trader" ? #c084fc : #ef4444
 
@@ -177,10 +141,6 @@ var line[] gexLines = array.new_line()
 var label[] gexLabels = array.new_label()
 var label timestampLabel = na
 var string prevState = ""
-// The GEX/system levels currently drawn (chart scale) — what the cross alerts watch.
-var float[]  alertPrices = array.new_float()
-var string[] alertNames  = array.new_string()
-var string[] alertKinds  = array.new_string()
 var int lastBarIdx = -1
 
 // BOS state
@@ -211,20 +171,12 @@ bool dChanged  = ta.change(time("D")) != 0
 bool h4Changed = ta.change(time("240")) != 0
 bool h1Changed = ta.change(time("60")) != 0
 
-// request.security — top-level calls. Always the LAST CLOSED bar of each timeframe
-// (offset [1] with lookahead_on is the non-repainting idiom: the same value on
-// historical and realtime chart bars). [2] is the bar before it. With the old
-// `lookahead_off` + `close` the breakout was tested on the CLOSED bar in history
-// but on the FIRST MINUTE of the developing bar in realtime — a repainting BO.
-//   *C1/O1/H1/L1 = the bar that just closed, *H2/L2 = the bar before it
-[mC1, mO1, mH1, mL1, mH2, mL2]       = request.security(syminfo.tickerid, "M",   [close[1], open[1], high[1], low[1], high[2], low[2]], lookahead=barmerge.lookahead_on)
-[wC1, wO1, wH1, wL1, wH2, wL2]       = request.security(syminfo.tickerid, "W",   [close[1], open[1], high[1], low[1], high[2], low[2]], lookahead=barmerge.lookahead_on)
-[dC1, dO1, dH1, dL1, dH2, dL2]       = request.security(syminfo.tickerid, "D",   [close[1], open[1], high[1], low[1], high[2], low[2]], lookahead=barmerge.lookahead_on)
-[h4C1, h4O1, h4H1, h4L1, h4H2, h4L2] = request.security(syminfo.tickerid, "240", [close[1], open[1], high[1], low[1], high[2], low[2]], lookahead=barmerge.lookahead_on)
-[h1C1, h1O1, h1H1, h1L1, h1H2, h1L2] = request.security(syminfo.tickerid, "60",  [close[1], open[1], high[1], low[1], high[2], low[2]], lookahead=barmerge.lookahead_on)
-// Structure levels = last closed day / week (same series, so PDH is yesterday on every bar)
-float dPrevH = dH1, float dPrevL = dL1
-float wPrevH = wH1, float wPrevL = wL1
+// request.security — top-level calls
+[mPrevH, mPrevL, mCurrC, mCurrH, mCurrL]       = request.security(syminfo.tickerid, "M",   [high[1], low[1], close, high, low], lookahead=barmerge.lookahead_off)
+[wPrevH, wPrevL, wCurrC, wCurrH, wCurrL]       = request.security(syminfo.tickerid, "W",   [high[1], low[1], close, high, low], lookahead=barmerge.lookahead_off)
+[dPrevH, dPrevL, dCurrC, dCurrH, dCurrL]       = request.security(syminfo.tickerid, "D",   [high[1], low[1], close, high, low], lookahead=barmerge.lookahead_off)
+[h4PrevH, h4PrevL, h4CurrC, h4CurrH, h4CurrL] = request.security(syminfo.tickerid, "240", [high[1], low[1], close, high, low], lookahead=barmerge.lookahead_off)
+[h1PrevH, h1PrevL, h1CurrC, h1CurrH, h1CurrL] = request.security(syminfo.tickerid, "60",  [high[1], low[1], close, high, low], lookahead=barmerge.lookahead_off)
 
 // ── 5-minute close stream — used by the Wall Flip tracker below ──
 // We pull the 5-min close regardless of the chart's display timeframe, so the
@@ -234,76 +186,39 @@ float wPrevH = wH1, float wPrevL = wL1
 bool new5mBar = ta.change(time5m) != 0
 
 
-// Breakout on the bar that just closed: its close beyond the previous bar's extreme, with
-// the body past the level larger than the shadow left behind.
-f_checkBOS(float prevH, float prevL, float c, float h, float l, bool changed, bool enabled) =>
+f_checkBOS(float prevH, float prevL, float currC, float currH, float currL, bool changed, bool enabled) =>
     float bullLevel = na
     float bearLevel = na
-    if enabled and changed and not na(prevH) and not na(c)
-        if c > prevH
-            float bodyAbove = c - prevH
-            float upperShadow = h - c
+    if enabled and changed and not na(prevH)
+        if currC > prevH
+            float bodyAbove = currC - prevH
+            float upperShadow = currH - currC
             if bodyAbove > upperShadow and bodyAbove > 0
                 bullLevel := prevH
-        if c < prevL
-            float bodyBelow = prevL - c
-            float lowerShadow = c - l
+        if currC < prevL
+            float bodyBelow = prevL - currC
+            float lowerShadow = currC - currL
             if bodyBelow > lowerShadow and bodyBelow > 0
                 bearLevel := prevL
     [bullLevel, bearLevel]
 
-[mBull, mBear]   = f_checkBOS(mH2, mL2, mC1, mH1, mL1, mChanged, showBOS and showBOS_M and tfActive)
-[wBull, wBear]   = f_checkBOS(wH2, wL2, wC1, wH1, wL1, wChanged, showBOS and showBOS_W and tfActive)
-[dBull, dBear]   = f_checkBOS(dH2, dL2, dC1, dH1, dL1, dChanged, showBOS and showBOS_D and tfActive)
-[h4Bull, h4Bear] = f_checkBOS(h4H2, h4L2, h4C1, h4H1, h4L1, h4Changed, showBOS and showBOS_H4 and tfActive)
-[h1Bull, h1Bear] = f_checkBOS(h1H2, h1L2, h1C1, h1H1, h1L1, h1Changed, showBOS and showBOS_H1 and tfActive)
-
-// BO label: triangles by timeframe (▲ H1, ▲▲ H4, ▲▲▲ D — here
-// also ▲▲▲▲ W and ▲▲▲▲▲ M), then "BO L/S <tf>", then the price. Before it read "H1+",
-// which told the timeframe but not the side.
-f_boLabel(bool isBull, string tf, float price) =>
-    string t = isBull ? "▲" : "▼"
-    int n = tf == "M" ? 5 : tf == "W" ? 4 : tf == "D" ? 3 : tf == "H4" ? 2 : 1
-    string tri = ""
-    for i = 1 to n
-        tri += t
-    tri + " BO " + (isBull ? "L" : "S") + " " + tf + " " + str.tostring(price, format.mintick)
-
-// Drop the oldest live breakout of a timeframe once it holds bosKeep of them (arrays are in
-// creation order, so the first match is the oldest).
-f_trimBOS(string tf) =>
-    int kept = 0
-    for i = 0 to array.size(bosTF) - 1
-        if array.get(bosTF, i) == tf
-            kept += 1
-    while kept >= bosKeep
-        int oldest = -1
-        for i = 0 to array.size(bosTF) - 1
-            if oldest < 0 and array.get(bosTF, i) == tf
-                oldest := i
-        if oldest < 0
-            break
-        line.delete(array.get(bosLines, oldest))
-        label.delete(array.get(bosLabels, oldest))
-        array.remove(bosLines, oldest)
-        array.remove(bosLabels, oldest)
-        array.remove(bosLevels, oldest)
-        array.remove(bosBullish, oldest)
-        array.remove(bosTF, oldest)
-        kept -= 1
+[mBull, mBear]   = f_checkBOS(mPrevH, mPrevL, mCurrC, mCurrH, mCurrL, mChanged, showBOS_M)
+[wBull, wBear]   = f_checkBOS(wPrevH, wPrevL, wCurrC, wCurrH, wCurrL, wChanged, showBOS_W)
+[dBull, dBear]   = f_checkBOS(dPrevH, dPrevL, dCurrC, dCurrH, dCurrL, dChanged, showBOS_D)
+[h4Bull, h4Bear] = f_checkBOS(h4PrevH, h4PrevL, h4CurrC, h4CurrH, h4CurrL, h4Changed, showBOS_H4)
+[h1Bull, h1Bear] = f_checkBOS(h1PrevH, h1PrevL, h1CurrC, h1CurrH, h1CurrL, h1Changed, showBOS_H1)
 
 // Add BOS
 f_addBOS(float level, bool isBull, string tf) =>
     if not na(level)
-        if array.size(bosTF) > 0
-            f_trimBOS(tf)
         float cv = f_convertPrice(level)
         color clr = isBull ? colorBOS_Bull : colorBOS_Bear
         int sty = tf == "M" or tf == "W" or tf == "D" ? 0 : 1
         int w = tf == "M" ? bosLineWidth + 2 : tf == "W" ? bosLineWidth + 1 : tf == "D" ? bosLineWidth : math.max(bosLineWidth - 1, 1)
         line newL = line.new(bar_index, cv, bar_index + 1, cv, color=clr, style=sty == 0 ? line.style_solid : line.style_dashed, width=w, extend=extend.right)
         array.push(bosLines, newL)
-        label newLbl = label.new(bar_index, cv, f_boLabel(isBull, tf, cv), color=color.new(clr, 50), textcolor=color.white, style=isBull ? label.style_label_up : label.style_label_down, size=size.small)
+        string dir = isBull ? "+" : "-"
+        label newLbl = label.new(bar_index, cv, tf + dir, color=color.new(clr, 50), textcolor=color.white, style=isBull ? label.style_label_up : label.style_label_down, size=size.tiny)
         array.push(bosLabels, newLbl)
         array.push(bosLevels, cv)
         array.push(bosBullish, isBull)
@@ -320,20 +235,13 @@ f_addBOS(h4Bear, false, "H4")
 f_addBOS(h1Bull, true, "H1")
 f_addBOS(h1Bear, false, "H1")
 
-// Invalidation: a breakout dies when a bar OF ITS OWN TIMEFRAME, in the
-// opposite direction, closes back through the level — a long BO H1 stays alive until a bearish
-// H1 bar closes below it. Not any 1-minute close on a 1-minute chart, which is what `close < lvl`
-// did before. Checked once per timeframe, on the bar that just closed.
-f_boKilled(bool isBull, float lvl, bool changed, float c, float o) =>
-    changed and not na(c) and (isBull ? (c < lvl and c < o) : (c > lvl and c > o))
-
+// Invalidate broken BOS
 if array.size(bosLines) > 0
     int i = array.size(bosLines) - 1
     while i >= 0
         float lvl = array.get(bosLevels, i)
         bool isBull = array.get(bosBullish, i)
-        string tf = array.get(bosTF, i)
-        bool broken = tf == "M" ? f_boKilled(isBull, lvl, mChanged, mC1, mO1) : tf == "W" ? f_boKilled(isBull, lvl, wChanged, wC1, wO1) : tf == "D" ? f_boKilled(isBull, lvl, dChanged, dC1, dO1) : tf == "H4" ? f_boKilled(isBull, lvl, h4Changed, h4C1, h4O1) : f_boKilled(isBull, lvl, h1Changed, h1C1, h1O1)
+        bool broken = isBull ? close < lvl : close > lvl
         if broken
             line.delete(array.get(bosLines, i))
             label.delete(array.get(bosLabels, i))
@@ -461,24 +369,17 @@ bool inEU   = etMins >= 180 and etMins < 480    // 03:00-08:00
 bool inPre  = etMins >= 480 and etMins < 570    // 08:00-09:30
 bool inUS   = etMins >= 570 and etMins < 960    // 09:30-16:00
 
-// "Current day" = the LAST futures day on the chart (18:00 ET → 17:00 ET), derived from
-// last_bar_time. It used to be "bars younger than 30 hours of wall-clock", which emptied
-// the chart of every AVWAP and session box on weekends and holidays.
-int lastEtMins = hour(last_bar_time, "America/New_York") * 60 + minute(last_bar_time, "America/New_York")
-int lastDayStart = last_bar_time - (lastEtMins >= 1080 ? lastEtMins - 1080 : lastEtMins + 360) * 60000
-bool inLastDay = time >= lastDayStart
-
 // Session box tracking with proper lifecycle
 var box curAsiaBox = na, var float _asiaHi = na, var float _asiaLo = na, var bool _asiaActive = false
 var box curEUBox = na,   var float _euHi = na,   var float _euLo = na,   var bool _euActive = false
 var box curPreBox = na,  var float _preHi = na,  var float _preLo = na,  var bool _preActive = false
 var box curUSBox = na,   var float _usHi = na,   var float _usLo = na,   var bool _usActive = false
 
-// Limit session boxes to the current (last) futures day unless showHistoricalSessions is on
-bool recentSessionOnly = showHistoricalSessions or inLastDay
+// Limit session boxes to current day unless showHistoricalSessions is on (30h = 1 futures day + buffer)
+bool recentSessionOnly = showHistoricalSessions or (time >= timenow - 30 * 3600000)
 
 // Asia
-if tfActive and showSessions and showAsia and recentSessionOnly
+if showSessions and showAsia and recentSessionOnly
     if inAsia
         if not _asiaActive
             _asiaActive := true
@@ -496,7 +397,7 @@ if tfActive and showSessions and showAsia and recentSessionOnly
         _asiaActive := false
 
 // Europe
-if tfActive and showSessions and showEU and recentSessionOnly
+if showSessions and showEU and recentSessionOnly
     if inEU
         if not _euActive
             _euActive := true
@@ -514,7 +415,7 @@ if tfActive and showSessions and showEU and recentSessionOnly
         _euActive := false
 
 // Pre-Market
-if tfActive and showSessions and showPre and recentSessionOnly
+if showSessions and showPre and recentSessionOnly
     if inPre
         if not _preActive
             _preActive := true
@@ -532,7 +433,7 @@ if tfActive and showSessions and showPre and recentSessionOnly
         _preActive := false
 
 // US RTH
-if tfActive and showSessions and showUS and recentSessionOnly
+if showSessions and showUS and recentSessionOnly
     if inUS
         if not _usActive
             _usActive := true
@@ -553,7 +454,7 @@ if tfActive and showSessions and showUS and recentSessionOnly
 // ║  SESSION AVWAP (Anchored VWAP per session)                                    ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-// AVWAP — uses same session flags as boxes (no wall-clock dependency)
+// AVWAP — uses same session flags as boxes (reliable, no timenow dependency)
 // Each AVWAP resets at its session start and accumulates through US close (16:00).
 // All AVWAPs reset at new futures day (Asia start = 18:00 ET).
 
@@ -630,12 +531,12 @@ else if pdSumV > 0 and inCurrentDay
     pdSumV  += vol
 float avwapPD = pdSumV > 0 ? pdSumPV / pdSumV : na
 
-// Show AVWAP only when active. When showHistoricalAVWAP is off, limit to the current (last) futures day.
-bool recentOnly = showHistoricalAVWAP or inLastDay
-float pAsia = tfActive and showAVWAP and showAvwapAsia and asiaActive and inCurrentDay and recentOnly ? avwapAsia : na
-float pEU   = tfActive and showAVWAP and showAvwapEU   and euActive   and inCurrentDay and recentOnly ? avwapEU   : na
-float pUS   = tfActive and showAVWAP and showAvwapUS   and usActive   and inUS         and recentOnly ? avwapUS   : na
-float pPD   = tfActive and showAVWAP and showAvwapPD   and pdSumV > 0 and inCurrentDay and recentOnly ? avwapPD   : na
+// Show AVWAP only when active. When showHistoricalAVWAP is off, limit to last 30 hours (1 futures day + buffer).
+bool recentOnly = showHistoricalAVWAP or (time >= timenow - 30 * 3600000)
+float pAsia = showAVWAP and showAvwapAsia and asiaActive and inCurrentDay and recentOnly ? avwapAsia : na
+float pEU   = showAVWAP and showAvwapEU   and euActive   and inCurrentDay and recentOnly ? avwapEU   : na
+float pUS   = showAVWAP and showAvwapUS   and usActive   and inUS         and recentOnly ? avwapUS   : na
+float pPD   = showAVWAP and showAvwapPD   and pdSumV > 0 and inCurrentDay and recentOnly ? avwapPD   : na
 
 plot(pAsia, "AVWAP Asia",    color=colorAvwapAsia, linewidth=avwapWidth, style=plot.style_linebr)
 plot(pEU,   "AVWAP EU",      color=colorAvwapEU,   linewidth=avwapWidth, style=plot.style_linebr)
@@ -677,43 +578,47 @@ if showAVWAP and showAvwapExtend and barstate.islast
             line.set_xy1(avwapLinePD, bar_index, pPD)
             line.set_xy2(avwapLinePD, bar_index + 1, pPD)
 
-// ── AVWAP Labels ──
-// Same anchor and same "price + name" format as every other label on the chart
-// (labelSide: left of the candles, or right past the GEX profile). They used to
-// sit 3 bars right of the last candle — under the price axis on most layouts,
-// which is why nobody saw them.
+// ── AVWAP Labels (on last bar, offset right) ──
 var label avwapLblAsia = na
 var label avwapLblEU   = na
 var label avwapLblUS   = na
 var label avwapLblPD   = na
 
-f_avwapLabel(label lbl, float y, string name, color clr) =>
-    label out = lbl
-    int x = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : bar_index - lineLeftExt
-    string txt = str.tostring(y, format.mintick) + " " + name
-    if na(out)
-        out := label.new(x, y, txt, style=label.style_label_left, size=size.small, textcolor=color.white, color=clr)
-    else
-        label.set_xy(out, x, y)
-        label.set_text(out, txt)
-    out
-
 if showAVWAP and showAvwapLabels and barstate.islast
     if showAvwapAsia and not na(pAsia)
-        avwapLblAsia := f_avwapLabel(avwapLblAsia, pAsia, "AVWAP Asia", colorAvwapAsia)
+        if na(avwapLblAsia)
+            avwapLblAsia := label.new(bar_index + 3, pAsia, "ASIA " + str.tostring(pAsia, format.mintick), style=label.style_label_left, size=size.small, textcolor=color.white, color=colorAvwapAsia)
+        else
+            label.set_xy(avwapLblAsia, bar_index + 3, pAsia)
+            label.set_text(avwapLblAsia, "ASIA " + str.tostring(pAsia, format.mintick))
+
     if showAvwapEU and not na(pEU)
-        avwapLblEU := f_avwapLabel(avwapLblEU, pEU, "AVWAP EU", colorAvwapEU)
+        if na(avwapLblEU)
+            avwapLblEU := label.new(bar_index + 3, pEU, "EU " + str.tostring(pEU, format.mintick), style=label.style_label_left, size=size.small, textcolor=color.white, color=colorAvwapEU)
+        else
+            label.set_xy(avwapLblEU, bar_index + 3, pEU)
+            label.set_text(avwapLblEU, "EU " + str.tostring(pEU, format.mintick))
+
     if showAvwapUS and not na(pUS)
-        avwapLblUS := f_avwapLabel(avwapLblUS, pUS, "AVWAP US", colorAvwapUS)
+        if na(avwapLblUS)
+            avwapLblUS := label.new(bar_index + 3, pUS, "US " + str.tostring(pUS, format.mintick), style=label.style_label_left, size=size.small, textcolor=color.white, color=colorAvwapUS)
+        else
+            label.set_xy(avwapLblUS, bar_index + 3, pUS)
+            label.set_text(avwapLblUS, "US " + str.tostring(pUS, format.mintick))
+
     if showAvwapPD and not na(pPD)
-        avwapLblPD := f_avwapLabel(avwapLblPD, pPD, "AVWAP US Prev Day", colorAvwapPD)
+        if na(avwapLblPD)
+            avwapLblPD := label.new(bar_index + 3, pPD, "US PD " + str.tostring(pPD, format.mintick), style=label.style_label_left, size=size.small, textcolor=color.white, color=colorAvwapPD)
+        else
+            label.set_xy(avwapLblPD, bar_index + 3, pPD)
+            label.set_text(avwapLblPD, "US PD " + str.tostring(pPD, format.mintick))
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║  GEX LEVELS + PROFILE (last bar only — same logic as GEX Dashboard v6.8)     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-string stateKey = gexDataActive + str.tostring(confluenceEmPct) + str.tostring(profileWidth) + str.tostring(barThickness) + str.tostring(profileOffset) + colorScheme + barColorStyle + lineStyleInput + str.tostring(lineWidth) + str.tostring(lineLeftExt) + tickerChoice
-bool needsRedraw = barstate.islast and (stateKey != prevState or bar_index != lastBarIdx or not tfActive)
+string stateKey = gexDataActive + str.tostring(profileWidth) + str.tostring(barThickness) + str.tostring(profileOffset) + colorScheme + barColorStyle + lineStyleInput + str.tostring(lineWidth) + str.tostring(lineLeftExt) + tickerChoice
+bool needsRedraw = barstate.islast and (stateKey != prevState or bar_index != lastBarIdx)
 
 if needsRedraw
     // Clear previous
@@ -728,22 +633,15 @@ if needsRedraw
     array.clear(gexLabels)
     if not na(timestampLabel)
         label.delete(timestampLabel)
-        timestampLabel := na
-    array.clear(alertPrices)
-    array.clear(alertNames)
-    array.clear(alertKinds)
 
     lastBarIdx := bar_index
-    // silent on timeframes above 1H (drawings cleared above, nothing new drawn)
-    string levelsData = ""
-    string profileData = ""
-    string rawInput = tfActive ? gexDataActive : ""
-    float emHighDisp = na
-    float emLowDisp = na
-    if tfActive
-        timestampLabel := label.new(bar_index + profileOffset, high + syminfo.mintick * 50, "TLADe " + tickerChoice, color=color.new(color.gray, 100), style=label.style_label_center, textcolor=color.new(color.gray, 40), size=size.tiny)
+    timestampLabel := label.new(bar_index + profileOffset, high + syminfo.mintick * 50, "TLADe " + tickerChoice, color=color.new(color.gray, 100), style=label.style_label_center, textcolor=color.new(color.gray, 40), size=size.tiny)
 
     // Parse S:|L:|P:
+    string levelsData = ""
+    string profileData = ""
+    string rawInput = gexDataActive
+
     if str.startswith(rawInput, "S:")
         int sEnd = str.pos(rawInput, "|")
         if sEnd > 2
@@ -768,7 +666,7 @@ if needsRedraw
         int gexBelowDrawn = 0
         int halfMax = math.ceil(maxVisibleLevels / 2)
 
-        // Find closest GEX to spot (protected) — and the EM range, which sizes the confluence band
+        // Find closest GEX to spot (protected)
         float closestAbove = na, float closestAboveDist = 999999.0
         float closestBelow = na, float closestBelowDist = 999999.0
         for lvlPair in levelPairs
@@ -776,10 +674,6 @@ if needsRedraw
             if array.size(p) >= 3
                 float s = str.tonumber(array.get(p, 0))
                 string t = array.get(p, 1)
-                if not na(s) and t == "EH"
-                    emHighDisp := f_convertPrice(s)
-                if not na(s) and t == "EL"
-                    emLowDisp := f_convertPrice(s)
                 if not na(s) and (t == "CW" or t == "PW")
                     float cv = f_convertPrice(s)
                     float dist = math.abs(cv - close)
@@ -803,7 +697,7 @@ if needsRedraw
                     float cv = f_convertPrice(lvlStrike)
                     bool inRange = not showOnlyNear or (math.abs(close - cv) / close * 100.0 <= nearPct)
                     bool isGex = lvlType == "CW" or lvlType == "PW"
-                    bool isSys = lvlType == "ZG" or lvlType == "MP" or lvlType == "EH" or lvlType == "EL" or lvlType == "EHR" or lvlType == "ELR" or lvlType == "VH" or lvlType == "VL"
+                    bool isSys = lvlType == "ZG" or lvlType == "MP" or lvlType == "EH" or lvlType == "EL" or lvlType == "VH" or lvlType == "VL"
                     bool isStr = lvlType == "PDH" or lvlType == "PDL" or lvlType == "PWH" or lvlType == "PWL"
                     bool isCM = lvlType == "CM"
                     bool isDF = lvlType == "DF"
@@ -858,7 +752,7 @@ if needsRedraw
                         else if lvlType == "MP"
                             lvlColor := colorMaxPain
                             sc := 2
-                        else if lvlType == "EH" or lvlType == "EL" or lvlType == "EHR" or lvlType == "ELR"
+                        else if lvlType == "EH" or lvlType == "EL"
                             lvlColor := colorEM
                             sc := 1
                         else if lvlType == "VH" or lvlType == "VL"
@@ -883,31 +777,28 @@ if needsRedraw
                         int useWidth = isWallFlipped ? math.max(lineWidth - 1, 1) : lineWidth
                         array.push(gexLines, line.new(bar_index - lineLeftExt, cv, bar_index + profileOffset, cv, color=lvlColor, style=ls, width=useWidth, extend=extend.both))
                         string flipSuffix = isWallFlipped ? " ↺" : ""
-                        string dLabel = f_formatPrice(lvlStrike) + " " + f_levelName(lvlType, lvlLabel) + flipSuffix
+                        string dLabel = f_formatPrice(lvlStrike) + " " + lvlType + " " + lvlLabel + flipSuffix
                         // Label anchor: "Left" keeps the historical placement (= clear of
                         // candles thanks to lineLeftExt). "Right" places the label past the
                         // GEX profile bars so it overlaps neither candles nor profile.
                         int lblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : bar_index - lineLeftExt
                         array.push(gexLabels, label.new(lblX, cv, dLabel, color=lvlColor, style=label.style_label_left, textcolor=color.white, size=size.small, tooltip=finalTT))
-                        if isGex or isSys
-                            array.push(alertPrices, cv)
-                            array.push(alertNames, dLabel)
-                            array.push(alertKinds, isGex ? "wall" : "system")
 
     // ── Draw Price Action (PDH/PDL/PWH/PWL) ──
     // Computed on the chart's OWN OHLC (dPrevH/dPrevL = prior day, wPrevH/wPrevL =
     // prior week, from the top-level request.security). Always in chart scale — no
     // f_convertPrice, no cross-family contamination. Replaces the PA that used to
     // arrive (and leak across tickers) in the data string.
-    if tfActive and showStructureLevels
+    if showStructureLevels
         float[]  paPrices = array.from(dPrevH, dPrevL, wPrevH, wPrevL)
-        string[] paNames  = array.from("Previous Day High", "Previous Day Low", "Previous Week High", "Previous Week Low")
+        string[] paCodes  = array.from("PDH", "PDL", "PWH", "PWL")
+        string[] paNames  = array.from("Prior Day High", "Prior Day Low", "Prior Week High", "Prior Week Low")
         for pi = 0 to 3
             float paPrice = array.get(paPrices, pi)
             if not na(paPrice)
                 array.push(gexLines, line.new(bar_index - lineLeftExt, paPrice, bar_index + profileOffset, paPrice, color=colorStructure, style=line.style_dotted, width=lineWidth, extend=extend.both))
                 int paLblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : bar_index - lineLeftExt
-                array.push(gexLabels, label.new(paLblX, paPrice, str.tostring(paPrice, format.mintick) + " " + array.get(paNames, pi), color=colorStructure, style=label.style_label_left, textcolor=color.white, size=size.small))
+                array.push(gexLabels, label.new(paLblX, paPrice, str.tostring(paPrice, format.mintick) + " " + array.get(paCodes, pi) + " " + array.get(paNames, pi), color=colorStructure, style=label.style_label_left, textcolor=color.white, size=size.small))
 
     // ── Draw Profile Bars ──
     if showProfile and profileData != ""
@@ -933,7 +824,7 @@ if needsRedraw
                     array.push(gexBoxes, box.new(xZero, cvStrike + boxH / 2, xZero + barLen, cvStrike - boxH / 2, border_color=color.new(baseC, 0), border_width=1, bgcolor=color.new(baseC, fillT)))
 
     // ═════════════════════════════════════════════════════════════════
-    // CONFLUENCE ZONES — cluster levels within a band sized on the EM range
+    // CONFLUENCE ZONES — cluster levels within ±5% prev-day ATR5 band
     // ═════════════════════════════════════════════════════════════════
     for b in confluenceBoxes
         box.delete(b)
@@ -942,12 +833,8 @@ if needsRedraw
         label.delete(lbl)
     array.clear(confluenceLabels)
 
-    // Band = % of the EM range: the same tolerance on a
-    // 60-point day and on a 150-point day means something different in points and the same thing
-    // in market terms. Without EH/EL in the data there is no band and no zone — not a default width.
-    float emRange = (not na(emHighDisp) and not na(emLowDisp)) ? emHighDisp - emLowDisp : na
-    if tfActive and showConfluence and not na(emRange) and emRange > 0
-        float band = emRange * (confluenceEmPct / 100.0) / 2.0  // half-band (7% of EM → ±3.5%)
+    if showConfluence
+        float band = confluenceBandPoints / 2.0  // half-band (e.g. 5 points → ±2.5)
 
         // Collect ALL levels into parallel arrays (price + name for tooltip)
         float[] allLevels = array.new_float()
@@ -964,19 +851,18 @@ if needsRedraw
                     if not na(s)
                         // PDH/PDL/PWH/PWL excluded here — PA now comes from the
                         // chart's own OHLC (added below), not the data string.
-                        bool isTracked = t == "CW" or t == "PW" or t == "ZG" or t == "MP" or t == "EH" or t == "EL" or t == "EHR" or t == "ELR" or t == "VH" or t == "VL"
+                        bool isTracked = t == "CW" or t == "PW" or t == "ZG" or t == "MP" or t == "EH" or t == "EL" or t == "VH" or t == "VL"
                         if isTracked
                             array.push(allLevels, f_convertPrice(s))
                             string nm = array.size(p) >= 3 ? array.get(p, 2) : t
-                            array.push(allNames, str.tostring(math.round(s)) + " " + f_levelName(t, nm))
+                            array.push(allNames, str.tostring(math.round(s)) + " " + nm)
 
         // BOS levels (already converted)
         if array.size(bosLevels) > 0
             for i = 0 to array.size(bosLevels) - 1
                 array.push(allLevels, array.get(bosLevels, i))
                 string tf = array.size(bosTF) > i ? array.get(bosTF, i) : ""
-                bool isBull = array.get(bosBullish, i)
-                array.push(allNames, str.tostring(math.round(array.get(bosLevels, i))) + " BO " + (isBull ? "L" : "S") + " " + tf)
+                array.push(allNames, str.tostring(math.round(array.get(bosLevels, i))) + " BOS " + tf)
 
         // AVWAP values (each counts as a separate level)
         if not na(pAsia)
@@ -990,22 +876,22 @@ if needsRedraw
             array.push(allNames, str.tostring(math.round(pUS)) + " AVWAP US")
         if not na(pPD)
             array.push(allLevels, pPD)
-            array.push(allNames, str.tostring(math.round(pPD)) + " AVWAP US Prev Day")
+            array.push(allNames, str.tostring(math.round(pPD)) + " AVWAP US PD")
 
         // Price Action from the chart's own OHLC (same source as the PA lines).
         if showStructureLevels
             if not na(dPrevH)
                 array.push(allLevels, dPrevH)
-                array.push(allNames, str.tostring(math.round(dPrevH)) + " Previous Day High")
+                array.push(allNames, str.tostring(math.round(dPrevH)) + " PDH")
             if not na(dPrevL)
                 array.push(allLevels, dPrevL)
-                array.push(allNames, str.tostring(math.round(dPrevL)) + " Previous Day Low")
+                array.push(allNames, str.tostring(math.round(dPrevL)) + " PDL")
             if not na(wPrevH)
                 array.push(allLevels, wPrevH)
-                array.push(allNames, str.tostring(math.round(wPrevH)) + " Previous Week High")
+                array.push(allNames, str.tostring(math.round(wPrevH)) + " PWH")
             if not na(wPrevL)
                 array.push(allLevels, wPrevL)
-                array.push(allNames, str.tostring(math.round(wPrevL)) + " Previous Week Low")
+                array.push(allNames, str.tostring(math.round(wPrevL)) + " PWL")
 
         // Parallel sort by price ascending (bubble sort to keep names in sync)
         int sz = array.size(allLevels)
@@ -1054,28 +940,13 @@ if needsRedraw
 // ║  ALERTS                                                                      ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-// GEX and system levels: a CLOSE that crosses the level (previous close on one side, this
-// close on the other). Evaluated on bar close so a wick through the wall does not fire.
-if enableAlerts and array.size(alertPrices) > 0 and barstate.isconfirmed
-    for i = 0 to array.size(alertPrices) - 1
-        float lvl = array.get(alertPrices, i)
-        string kind = array.get(alertKinds, i)
-        bool wanted = kind == "wall" ? alertWalls : alertSystem
-        if wanted
-            bool up = close[1] < lvl and close >= lvl
-            bool down = close[1] > lvl and close <= lvl
-            if up or down
-                alert("TLADe " + array.get(alertNames, i) + " crossed " + (up ? "UP" : "DOWN"), alert.freq_once_per_bar_close)
-
-// Breakout levels: touch-and-close through, as before.
-if enableAlerts and alertBOS and array.size(bosLevels) > 0
+if enableAlerts and array.size(bosLevels) > 0
     for i = 0 to array.size(bosLevels) - 1
         float price = array.get(bosLevels, i)
         string tf = array.get(bosTF, i)
-        bool isBull = array.get(bosBullish, i)
         bool touched = high >= price and low <= price
         bool crossUp = touched and close >= price and (open < price or low < price)
         bool crossDown = touched and close <= price and (open > price or high > price)
         if crossUp or crossDown
             string dir = crossUp ? "UP" : "DOWN"
-            alert("TLADe BO " + (isBull ? "L" : "S") + " " + tf + " " + str.tostring(price, format.mintick) + " crossed " + dir, alert.freq_once_per_bar)
+            alert("TLADe BOS " + tf + " " + dir + " " + str.tostring(price, format.mintick), alert.freq_once_per_bar)

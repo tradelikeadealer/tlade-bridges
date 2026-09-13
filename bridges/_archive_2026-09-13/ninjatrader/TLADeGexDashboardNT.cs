@@ -1,7 +1,3 @@
-﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.0 (13 September 2026)
-// Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
-// rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
-// confluence zones (% of EM), silent above 1H, level-cross alerts. Layout offsets are NT8's own.
 #region Using declarations
 using System;
 using System.Collections.Generic;
@@ -64,20 +60,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private int _lastDrawnBar = -1;
         private bool _isDelayedMode = false;
-        private double _ndxQqqRatio = 0.0;   // NDX→QQQ ratio from the data string (R:), NQ family only
-
-        // ── Wall flip, the TradingView rule: two consecutive 5-minute closes beyond the strike flip
-        // the wall (and two the other way restore it). State per wall (futures-space strike), reset
-        // when the data string changes. Read on the 5-minute series added in State.Configure, so the
-        // rule is the same on a 1-minute, 5-minute or hourly chart — and it no longer blinks per tick.
-        private readonly Dictionary<double, int> _wallCounter = new Dictionary<double, int>();
-        private readonly Dictionary<double, bool> _wallFlipped = new Dictionary<double, bool>();
-        private readonly Dictionary<double, string> _wallType = new Dictionary<double, string>();
-        private bool _flipDirty = false;
-
-        // Levels currently drawn (chart scale) — what the cross alerts watch
-        private struct AlertLevel { public double Price; public string Name; public string Kind; }
-        private readonly List<AlertLevel> _alertLevels = new List<AlertLevel>();
 
         // ── v1.1: Session AVWAP local compute (mirrors the TV Pine indicator) ──
         // 4 plots (Asia / EU / US / Prev Day US) from hlc3*volume cumulative,
@@ -107,7 +89,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private readonly List<LevelEntry> _localPA = new List<LevelEntry>();
         private int _paLastComputedBar = -1;
         private int _bosLastComputedBar = -1;
-        private struct DBar { public double O, H, L, C; }
+        private struct DBar { public double H, L, C; }
 
         // ── Auto-fetch from TLADe API ──
         private static readonly string API_URL = "https://europe-west1-omggex.cloudfunctions.net/indicatorData";
@@ -188,7 +170,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (State == State.SetDefaults)
             {
                 Name = "TLADe GEX";
-                Description = "TLADe GEX Levels 3.5.0 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
+                Description = "TLADe GEX Dashboard v1.1 — GEX levels + profile, Session AVWAP, Session Boxes, local BOS (family parity with TV/ATAS/MW)";
                 Calculate = Calculate.OnPriceChange;
                 IsOverlay = true;
                 DisplayInDataBox = false;
@@ -198,17 +180,14 @@ namespace NinjaTrader.NinjaScript.Indicators
 
                 DisplayTicker = "ES"; // ES / SPX / SPY / NQ / NDX / QQQ
                 AutoDetectTicker = true; // override DisplayTicker from chart symbol at runtime
-                EsSpxSpread = 0.0;   // 0 = not known: strikes shown as-is until the data string brings S:
-                NqNdxSpread = 0.0;
+                EsSpxSpread = 24.0;
+                NqNdxSpread = 40.0;
 
                 GexDataInput = "";
 
                 ShowGexLevels = true;
                 ShowSystemLevels = true;
-                ShowStructureLevels = false;
-                ShowCharmMagnet = false;
-                ShowDeltaFlip = true;
-                LineStyle = "Dotted";
+                ShowStructureLevels = true;
                 ShowZeroGamma = false;   // ZG already shows via System Levels; this shows it ALONE when System is off
 
                 MaxGexLevels = 10;     // 999 = All
@@ -252,29 +231,14 @@ namespace NinjaTrader.NinjaScript.Indicators
                 ApiKey = "";
 
                 // v1.1 — Breakout / Session AVWAP / Session Boxes (family parity with TV/ATAS/MW)
-                ShowBreakoutLevels = false;
-                ShowBosM = false;
-                ShowBosW = false;
-                ShowBosD = true;
-                ShowBosH4 = true;
-                ShowBosH1 = true;
-                BosKeepPerTf = 2;
+                ShowBreakoutLevels = true;
                 ShowAvwapAsia = true;
                 ShowAvwapEU = true;
                 ShowAvwapUS = true;
                 ShowAvwapPD = true;
                 ShowHistoricalAvwap = false;
                 AvwapLineWidth = 2;
-                ShowAboveH1 = false;
-                EnableAlerts = false;
-                AlertWalls = true;
-                AlertSystem = true;
-                AlertBos = true;
-                ShowConfluence = false;
-                ConfluenceMinSize = 3;
-                ConfluenceEmPct = 7.0;
-                ShowAvwapLabels = true;
-                ShowSessionBoxes = false;
+                ShowSessionBoxes = true;
                 ShowBoxAsia = true;
                 ShowBoxEU = true;
                 ShowBoxPre = true;
@@ -286,11 +250,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 AddPlot(new Stroke(new SolidColorBrush(Color.FromRgb(0x3b, 0x82, 0xf6)), 2), PlotStyle.Line, "AVWAP EU");
                 AddPlot(new Stroke(new SolidColorBrush(Color.FromRgb(0x22, 0xc5, 0x5e)), 2), PlotStyle.Line, "AVWAP US");
                 AddPlot(new Stroke(new SolidColorBrush(Color.FromRgb(0x6e, 0xe7, 0xb7)), 2), PlotStyle.Line, "AVWAP US Prev");
-            }
-            else if (State == State.Configure)
-            {
-                // 5-minute close stream for the wall-flip rule (BarsInProgress 1)
-                AddDataSeries(BarsPeriodType.Minute, 5);
             }
             else if (State == State.DataLoaded)
             {
@@ -374,13 +333,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         protected override void OnBarUpdate()
         {
-            if (BarsInProgress == 1)
-            {
-                // a new 5-minute bar has opened: the previous one is closed
-                if (IsFirstTickOfBar && CurrentBars[1] >= 1)
-                    UpdateWallFlips(Closes[1][1]);
-                return;
-            }
             if (BarsInProgress != 0)
                 return;
             if (CurrentBar < 1)
@@ -388,16 +340,13 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             // v1.1 — Session AVWAP accumulates on EVERY bar (historical included):
             // the plots need per-bar values, unlike the static level overlays.
-            if (TfActive()) ComputeAvwapCurrentBar();
+            ComputeAvwapCurrentBar();
 
             // Levels/boxes are static overlays — only need the latest bar. Draw on the LAST
             // loaded bar even during Historical, so a freshly-loaded / closed-market (weekend)
             // chart renders immediately instead of waiting for a realtime tick that never comes.
             if (State == State.Historical && CurrentBar < Bars.Count - 1)
                 return;
-
-            if (EnableAlerts && State == State.Realtime && IsFirstTickOfBar && CurrentBar >= 2)
-                CheckLevelAlerts();
 
             TryAutoFetch();
 
@@ -411,9 +360,8 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (settingsChanged)
                 _prevSettingsSig = sig;
 
-            if (!inputChanged && !settingsChanged && !_flipDirty && _lastDrawnBar == CurrentBar)
+            if (!inputChanged && !settingsChanged && _lastDrawnBar == CurrentBar)
                 return;
-            _flipDirty = false;
 
             _lastDrawnBar = CurrentBar;
 
@@ -445,11 +393,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 ShowGexLevels.ToString(),
                 ShowSystemLevels.ToString(),
                 ShowStructureLevels.ToString(),
-                ShowCharmMagnet.ToString(),
-                ShowDeltaFlip.ToString(),
-                LineStyle ?? "",
-                NqNdxSpread.ToString("0.########", inv),
-                _ndxQqqRatio.ToString("0.########", inv),
                 MaxGexLevels.ToString(inv),
                 ShowOnlyNear.ToString(),
                 NearPct.ToString("0.########", inv),
@@ -477,13 +420,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 MaxProfileRows.ToString(inv),
                 // v1.1
                 ShowBreakoutLevels.ToString(),
-                ShowBosM.ToString(), ShowBosW.ToString(), ShowBosD.ToString(), ShowBosH4.ToString(), ShowBosH1.ToString(),
-                BosKeepPerTf.ToString(inv),
-                ShowAboveH1.ToString(),
-                ShowConfluence.ToString(),
-                ConfluenceMinSize.ToString(inv),
-                ConfluenceEmPct.ToString("0.########", inv),
-                ShowAvwapLabels.ToString(),
                 ShowSessionBoxes.ToString(),
                 ShowBoxAsia.ToString(),
                 ShowBoxEU.ToString(),
@@ -651,12 +587,12 @@ namespace NinjaTrader.NinjaScript.Indicators
                 DateTime et = BarOpenEt(Bars.GetTime(i));
                 long etMin = (long)Math.Floor((et - epoch).TotalMinutes);
                 long slot = FloorDiv(etMin - anchor, periodMinutes) * periodMinutes + anchor;
-                double o = Bars.GetOpen(i), h = Bars.GetHigh(i), l = Bars.GetLow(i), c = Bars.GetClose(i);
+                double h = Bars.GetHigh(i), l = Bars.GetLow(i), c = Bars.GetClose(i);
                 if (!has || slot != curSlot)
                 {
                     if (has) outl.Add(cur);
                     has = true; curSlot = slot;
-                    cur = new DBar { O = o, H = h, L = l, C = c };
+                    cur = new DBar { H = h, L = l, C = c };
                 }
                 else
                 {
@@ -669,68 +605,27 @@ namespace NinjaTrader.NinjaScript.Indicators
             return outl;
         }
 
-        // Futures day (18:00 ET boundary) of a chart bar
-        private DateTime FuturesDayOf(int i)
-        {
-            DateTime et = BarOpenEt(Bars.GetTime(i));
-            return et.Hour >= 18 ? et.Date.AddDays(1) : et.Date;
-        }
-
-        // Chart bars -> one bar per calendar key of the futures day (week = its Monday, month = its 1st)
-        private List<DBar> AggregateByKey(Func<DateTime, DateTime> keyOf)
-        {
-            var outl = new List<DBar>();
-            bool has = false; DateTime curKey = DateTime.MinValue; DBar cur = default(DBar);
-            int count = Bars.Count;
-            for (int i = 0; i < count; i++)
-            {
-                DateTime k = keyOf(FuturesDayOf(i));
-                double o = Bars.GetOpen(i), h = Bars.GetHigh(i), l = Bars.GetLow(i), c = Bars.GetClose(i);
-                if (!has || k != curKey)
-                {
-                    if (has) outl.Add(cur);
-                    has = true; curKey = k;
-                    cur = new DBar { O = o, H = h, L = l, C = c };
-                }
-                else
-                {
-                    if (h > cur.H) cur.H = h;
-                    if (l < cur.L) cur.L = l;
-                    cur.C = c;
-                }
-            }
-            if (has) outl.Add(cur);
-            return outl;
-        }
-
-        // Breakouts of one timeframe, CLOSED bars only (the last element is the bar in progress and
-        // is never a breakout candidate). A breakout dies when a later bar of the SAME timeframe, in
-        // the opposite direction, closes back through its level — a long BO H1 lives until a bearish
-        // H1 bar closes below it. Of the survivors, the last BosKeep per timeframe are drawn.
+        // Most recent valid bull + bear BOS per timeframe (= clientEngineService.detectBOS).
         private void DetectBosInto(List<DBar> c, string tf)
         {
-            int lastClosed = c.Count - 2;            // c[Count-1] is still forming
-            if (lastClosed < 1) return;
-            var alive = new List<LevelEntry>();
-            for (int i = 1; i <= lastClosed; i++)
+            if (c.Count < 3) return;
+            bool foundBull = false, foundBear = false;
+            for (int i = c.Count - 2; i >= 2 && (!foundBull || !foundBear); i--)
             {
                 var curr = c[i]; var prev = c[i - 1];
-                if (IsQualityBreakout(curr, prev, true))
+                if (!foundBull && IsQualityBreakout(curr, prev, true))
                 {
-                    bool killed = false;
-                    for (int j = i + 1; j <= lastClosed; j++) { var b = c[j]; if (b.C < prev.H && b.C < b.O) { killed = true; break; } }
-                    if (!killed) alive.Add(MakeBos(prev.H, true, tf));
+                    bool valid = true;
+                    for (int j = i + 1; j < c.Count; j++) if (c[j].C < prev.H) { valid = false; break; }
+                    if (valid) { _localBos.Add(MakeBos(prev.H, true, tf)); foundBull = true; }
                 }
-                if (IsQualityBreakout(curr, prev, false))
+                if (!foundBear && IsQualityBreakout(curr, prev, false))
                 {
-                    bool killed = false;
-                    for (int j = i + 1; j <= lastClosed; j++) { var b = c[j]; if (b.C > prev.L && b.C > b.O) { killed = true; break; } }
-                    if (!killed) alive.Add(MakeBos(prev.L, false, tf));
+                    bool valid = true;
+                    for (int j = i + 1; j < c.Count; j++) if (c[j].C > prev.L) { valid = false; break; }
+                    if (valid) { _localBos.Add(MakeBos(prev.L, false, tf)); foundBear = true; }
                 }
             }
-            int keep = Math.Max(1, BosKeepPerTf);
-            int from = Math.Max(0, alive.Count - keep);
-            for (int i = from; i < alive.Count; i++) _localBos.Add(alive[i]);
         }
 
         private LevelEntry MakeBos(double chartPrice, bool bull, string tf)
@@ -739,19 +634,11 @@ namespace NinjaTrader.NinjaScript.Indicators
             {
                 EsStrike = chartPrice,       // chart-native price — see IsChartSpace
                 Type = bull ? "BL" : "BS",
-                Label = BoLabel(bull, tf),
+                Label = "BOS " + tf + (bull ? " L" : " S"),
                 Tooltip = "",
                 Magnitude = 0,
                 IsChartSpace = true
             };
-        }
-
-        // Triangles by timeframe (▲ H1, ▲▲ H4, ▲▲▲ D, ▲▲▲▲ W, ▲▲▲▲▲ M), then "BO L/S <tf>".
-        private static string BoLabel(bool bull, string tf)
-        {
-            string t = bull ? "\u25B2" : "\u25BC";
-            int n = tf == "M" ? 5 : tf == "W" ? 4 : tf == "D" ? 3 : tf == "H4" ? 2 : 1;
-            return new string(t[0], n) + " BO " + (bull ? "L" : "S") + " " + tf;
         }
 
         private void ComputeLocalBos()
@@ -759,11 +646,8 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (CurrentBar == _bosLastComputedBar) return; // recompute on new bar only
             _bosLastComputedBar = CurrentBar;
             _localBos.Clear();
-            if (ShowBosM) DetectBosInto(AggregateByKey(d => new DateTime(d.Year, d.Month, 1)), "M");
-            if (ShowBosW) DetectBosInto(AggregateByKey(d => d.AddDays(-(((int)d.DayOfWeek + 6) % 7)).Date), "W");
-            if (ShowBosD) DetectBosInto(AggregateByEtPeriod(1440), "D");
-            if (ShowBosH4) DetectBosInto(AggregateByEtPeriod(240), "H4");
-            if (ShowBosH1) DetectBosInto(AggregateByEtPeriod(60), "H1");
+            DetectBosInto(AggregateByEtPeriod(240), "H4");
+            DetectBosInto(AggregateByEtPeriod(60), "H1");
         }
 
         private LevelEntry MakePA(double price, string type)
@@ -969,22 +853,9 @@ namespace NinjaTrader.NinjaScript.Indicators
                         System.Globalization.CultureInfo.InvariantCulture, out double parsedSpread)
                         && parsedSpread > 0)
                     {
-                        if (IsNqFamily()) NqNdxSpread = parsedSpread;
-                        else EsSpxSpread = parsedSpread;
+                        EsSpxSpread = parsedSpread;
                     }
                     raw = raw.Substring(sEnd + 1);
-                }
-            }
-            // R: NDX→QQQ ratio (NQ family strings only)
-            if (raw.StartsWith("R:", StringComparison.Ordinal))
-            {
-                int rEnd = raw.IndexOf('|');
-                if (rEnd > 2)
-                {
-                    if (double.TryParse(raw.Substring(2, rEnd - 2), System.Globalization.NumberStyles.Float,
-                        System.Globalization.CultureInfo.InvariantCulture, out double parsedRatio) && parsedRatio > 0)
-                        _ndxQqqRatio = parsedRatio;
-                    raw = raw.Substring(rEnd + 1);
                 }
             }
 
@@ -1038,8 +909,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                 }
             }
 
-            ResetWallFlips();
-
             if (!string.IsNullOrEmpty(profileData))
             {
                 string[] rows = profileData.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -1069,12 +938,6 @@ namespace NinjaTrader.NinjaScript.Indicators
         private void DrawAll()
         {
             ClearAll();
-            _alertLevels.Clear();
-            if (!TfActive())
-            {
-                for (int i = 0; i < 4 && i < Values.Length; i++) Values[i].Reset();
-                return;
-            }
 
             double spot = Close[0];
 
@@ -1125,115 +988,12 @@ namespace NinjaTrader.NinjaScript.Indicators
 
             if (ShowProfileBars && _profile.Count > 0)
                 DrawProfileBars(profileBarsAgo);
-
-            if (ShowAvwapLabels)
-                DrawAvwapLabels(labelPosBarsAgo);
-
-            if (ShowConfluence)
-                DrawConfluenceZones(labelPosBarsAgo, leftBarsAgo, rightBarsAgo);
-        }
-
-        // AVWAP labels at the same anchor and in the same "price + name" form as every other label
-        private void DrawAvwapLabels(int labelBarsAgo)
-        {
-            string[] names = { "AVWAP Asia", "AVWAP EU", "AVWAP US", "AVWAP US Prev Day" };
-            bool[] on = { ShowAvwapAsia, ShowAvwapEU, ShowAvwapUS, ShowAvwapPD };
-            for (int i = 0; i < 4 && i < Values.Length; i++)
-            {
-                if (!on[i] || !Values[i].IsValidDataPoint(0)) continue;
-                double v = Values[i][0];
-                if (double.IsNaN(v) || v <= 0) continue;
-                string tag = $"TLADeAvwapLbl_{i}";
-                Brush b = Plots[i].Brush;
-                var t = Draw.Text(this, tag, $"{v.ToString("0.##", inv)} {names[i]}", labelBarsAgo, v, b);
-                if (t != null && _labelFont != null) t.Font = _labelFont;
-                _tags.Add(tag);
-            }
-        }
-
-        // Confluence zones: every level on the chart (feed levels, breakouts, AVWAPs, structure) sorted
-        // by price and clustered within a band sized on the EM range — the TradingView rule. No EM in
-        // the data → no zones, never a default width.
-        private void DrawConfluenceZones(int labelBarsAgo, int leftBarsAgo, int rightBarsAgo)
-        {
-            double emH = double.NaN, emL = double.NaN;
-            foreach (var lvl in _levels)
-            {
-                if (lvl.Type == "EH") emH = ConvertPrice(lvl.EsStrike);
-                else if (lvl.Type == "EL") emL = ConvertPrice(lvl.EsStrike);
-            }
-            if (double.IsNaN(emH) || double.IsNaN(emL) || emH - emL <= 0) return;
-            double band = (emH - emL) * (ConfluenceEmPct / 100.0) / 2.0;   // half-band
-
-            var prices = new List<double>();
-            var names = new List<string>();
-            foreach (var lvl in _levels)
-            {
-                if (!(IsGex(lvl.Type) || IsSystem(lvl.Type))) continue;
-                prices.Add(ConvertPrice(lvl.EsStrike));
-                names.Add($"{FormatPrice(lvl.EsStrike)} {LevelName(lvl.Type, lvl.Label)}");
-            }
-            if (ShowBreakoutLevels)
-                foreach (var bo in _localBos) { prices.Add(bo.EsStrike); names.Add($"{Math.Round(bo.EsStrike).ToString("0", inv)} {bo.Label}"); }
-            string[] avNames = { "AVWAP Asia", "AVWAP EU", "AVWAP US", "AVWAP US Prev Day" };
-            bool[] avOn = { ShowAvwapAsia, ShowAvwapEU, ShowAvwapUS, ShowAvwapPD };
-            for (int i = 0; i < 4 && i < Values.Length; i++)
-            {
-                if (!avOn[i] || !Values[i].IsValidDataPoint(0)) continue;
-                double v = Values[i][0];
-                if (double.IsNaN(v) || v <= 0) continue;
-                prices.Add(v); names.Add($"{Math.Round(v).ToString("0", inv)} {avNames[i]}");
-            }
-            if (ShowStructureLevels)
-                foreach (var pa in _localPA) { prices.Add(pa.EsStrike); names.Add($"{Math.Round(pa.EsStrike).ToString("0", inv)} {LevelName(pa.Type, pa.Label)}"); }
-
-            int n = prices.Count;
-            if (n < 2) return;
-            var idx = new List<int>();
-            for (int i = 0; i < n; i++) idx.Add(i);
-            idx.Sort((a, b) => prices[a].CompareTo(prices[b]));
-
-            int minSize = Math.Max(2, ConfluenceMinSize);
-            int boxNo = 0;
-            int i0 = 0;
-            while (i0 < n)
-            {
-                double cMin = prices[idx[i0]], cMax = cMin;
-                var items = new List<string> { names[idx[i0]] };
-                int j = i0 + 1;
-                while (j < n)
-                {
-                    double next = prices[idx[j]];
-                    if (next - cMin <= 2 * band) { cMax = next; items.Add(names[idx[j]]); j++; }
-                    else break;
-                }
-                int size = items.Count;
-                if (size >= minSize)
-                {
-                    int capped = Math.Min(size, 5);
-                    // TradingView colours: 3 → #facc15 @25%, 4 → #fb923c @30%, 5+ → #ef4444 @35%
-                    Color c = capped >= 5 ? Color.FromRgb(0xef, 0x44, 0x44) : capped >= 4 ? Color.FromRgb(0xfb, 0x92, 0x3c) : Color.FromRgb(0xfa, 0xcc, 0x15);
-                    int opacity = capped >= 5 ? 35 : capped >= 4 ? 30 : 25;
-                    double top = cMax, bottom = cMin;
-                    if (top - bottom < TickSize) { top += TickSize / 2.0; bottom -= TickSize / 2.0; }
-                    string tag = $"TLADeConf_{boxNo}";
-                    Draw.Rectangle(this, tag, false, leftBarsAgo, top, rightBarsAgo, bottom, MakeBrush(c, 128), MakeBrush(c, 255), opacity);
-                    _tags.Add(tag);
-                    string txt = capped >= 5 ? "UBER" : capped + "x";
-                    string ttag = $"TLADeConfLbl_{boxNo}";
-                    var t = Draw.Text(this, ttag, txt, rightBarsAgo, (top + bottom) / 2.0, MakeBrush(c, 255));
-                    if (t != null && _labelFont != null) t.Font = _labelFont;
-                    _tags.Add(ttag);
-                    boxNo++;
-                }
-                i0 = j;
-            }
         }
 
         private void DrawBosLevels(double spot, int labelBarsAgo, int leftBarsAgo, int rightBarsAgo)
         {
-            Brush blBrush = MakeBrush(C_BO_BULL, 255);
-            Brush bsBrush = MakeBrush(C_BO_BEAR, 255);
+            Brush blBrush = MakeBrush(Color.FromRgb(0x10, 0xB9, 0x81), 255); // emerald — Breakout Long
+            Brush bsBrush = MakeBrush(Color.FromRgb(0xF4, 0x3F, 0x5E), 255); // rose    — Breakout Short
 
             foreach (var lvl in _localBos)
             {
@@ -1242,22 +1002,16 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (!inRange) continue;
 
                 Brush lvlBrush = lvl.Type == "BL" ? blBrush : bsBrush;
-                string tf = lvl.Label.Substring(lvl.Label.LastIndexOf(' ') + 1);
-                // M/W/D solid and heavier, H4/H1 dashed and lighter — as the TradingView indicator
-                bool higherTf = tf == "M" || tf == "W" || tf == "D";
-                int baseW = Math.Max(1, Math.Min(10, LevelLineWidth));
-                int w = tf == "M" ? baseW + 2 : tf == "W" ? baseW + 1 : tf == "D" ? baseW : Math.Max(1, baseW - 1);
-                string key = $"{lvl.Type}_{tf}_{y.ToString("0.####", inv)}";
+                string key = $"{lvl.Type}_{lvl.Label.Replace(' ', '_')}_{y.ToString("0.####", inv)}";
 
                 string lineTag = $"TLADeLine_{key}";
-                Draw.Line(this, lineTag, false, leftBarsAgo, y, rightBarsAgo, y, lvlBrush, higherTf ? DashStyleHelper.Solid : DashStyleHelper.Dash, w);
+                Draw.Line(this, lineTag, false, leftBarsAgo, y, rightBarsAgo, y, lvlBrush, DashStyleHelper.Dash, 1);
                 _tags.Add(lineTag);
-                _alertLevels.Add(new AlertLevel { Price = y, Name = $"{lvl.Label} {y.ToString("0.##", inv)}", Kind = "bo" });
 
                 if (ShowLabels)
                 {
                     string textTag = $"TLADeText_{key}";
-                    string display = $"{lvl.Label} {(EffectiveDisplayTicker() == "SPY" || EffectiveDisplayTicker() == "QQQ" ? y.ToString("0.##", inv) : y.ToString("0.##", inv))}";
+                    string display = $"{(EffectiveDisplayTicker() == "SPY" || EffectiveDisplayTicker() == "QQQ" ? y.ToString("0.##", inv) : Math.Round(y).ToString("0", inv))} {lvl.Label}";
                     var t = Draw.Text(this, textTag, display, labelBarsAgo, y, lvlBrush);
                     if (t != null && _labelFont != null)
                         t.Font = _labelFont;
@@ -1268,7 +1022,7 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private void DrawPALevels(double spot, int labelBarsAgo, int leftBarsAgo, int rightBarsAgo)
         {
-            Brush paBrush = MakeBrush(C_STRUCT, 255); // Structure (PDH/PDL/PWH/PWL)
+            Brush paBrush = MakeBrush(Color.FromRgb(0x94, 0xA3, 0xB8), 255); // slate — Structure (PDH/PDL/PWH/PWL)
             foreach (var lvl in _localPA)
             {
                 double y = lvl.EsStrike; // chart-native price
@@ -1284,7 +1038,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (ShowLabels)
                 {
                     string textTag = $"TLADeText_{key}";
-                    string display = $"{(EffectiveDisplayTicker() == "SPY" || EffectiveDisplayTicker() == "QQQ" ? y.ToString("0.##", inv) : Math.Round(y).ToString("0", inv))} {LevelName(lvl.Type, lvl.Label)}";
+                    string display = $"{(EffectiveDisplayTicker() == "SPY" || EffectiveDisplayTicker() == "QQQ" ? y.ToString("0.##", inv) : Math.Round(y).ToString("0", inv))} {lvl.Label}";
                     var t = Draw.Text(this, textTag, display, labelBarsAgo, y, paBrush);
                     if (t != null && _labelFont != null) t.Font = _labelFont;
                     _tags.Add(textTag);
@@ -1342,8 +1096,6 @@ namespace NinjaTrader.NinjaScript.Indicators
                     else if (!isAbove && gexBelowDrawn < halfMax) shouldShow = true;
                 }
                 else if (isSystem && (ShowSystemLevels || (lvl.Type == "ZG" && ShowZeroGamma))) shouldShow = true;
-                else if (IsCharm(lvl.Type) && ShowCharmMagnet) shouldShow = true;
-                else if (IsDeltaFlip(lvl.Type) && ShowDeltaFlip) shouldShow = true;
                 // Structure (PDH/PDL/PWH/PWL) is now computed locally (DrawPALevels), not from the
                 // feed — Mother is GEX-only. Feed structure, if any, is intentionally not drawn here.
                 else if (isStructure) shouldShow = false;
@@ -1352,57 +1104,44 @@ namespace NinjaTrader.NinjaScript.Indicators
                     continue;
 
                 Brush lvlBrush = Brushes.Gray;
-                bool isWallFlipped = false;
 
-                // Colour = NATURE (a Call Wall stays the call colour whatever its role). A flipped
-                // wall is told by a thinner line and the "↺" suffix, never by swapping colours.
                 if (lvl.Type == "CW")
                 {
-                    isWallFlipped = IsWallFlipped(lvl.EsStrike);
-                    lvlBrush = _negBrush;
+                    bool flipped = y < spot;
+                    lvlBrush = flipped ? _posBrush : _negBrush;
                     if (!maxIsAll && !isProtected) { if (isAbove) gexAboveDrawn++; else gexBelowDrawn++; }
                 }
                 else if (lvl.Type == "PW")
                 {
-                    isWallFlipped = IsWallFlipped(lvl.EsStrike);
-                    lvlBrush = _posBrush;
+                    bool flipped = y > spot;
+                    lvlBrush = flipped ? _negBrush : _posBrush;
                     if (!maxIsAll && !isProtected) { if (isAbove) gexAboveDrawn++; else gexBelowDrawn++; }
                 }
-                else if (lvl.Type == "ZG") lvlBrush = MakeBrush(C_ZG, 255);
-                else if (lvl.Type == "MP") lvlBrush = MakeBrush(C_MP, 255);
-                else if (lvl.Type == "EH" || lvl.Type == "EL" || lvl.Type == "EHR" || lvl.Type == "ELR") lvlBrush = MakeBrush(C_EM, 255);
-                else if (lvl.Type == "VH" || lvl.Type == "VL") lvlBrush = MakeBrush(C_VB, 255);
-                else if (IsCharm(lvl.Type)) lvlBrush = MakeBrush(C_CHARM, 255);
-                else if (IsDeltaFlip(lvl.Type)) lvlBrush = MakeBrush(C_DFLIP, 255);
-                else if (isStructure) lvlBrush = MakeBrush(C_STRUCT, 255);
+                else if (lvl.Type == "ZG") lvlBrush = Brushes.DarkGray;
+                else if (lvl.Type == "MP") lvlBrush = Brushes.Red;
+                else if (lvl.Type == "EH" || lvl.Type == "EL") lvlBrush = Brushes.DodgerBlue;
+                else if (lvl.Type == "VH" || lvl.Type == "VL") lvlBrush = Brushes.Gray;
+                else if (isStructure) lvlBrush = Brushes.DarkGray;
 
                 string key = $"{lvl.Type}_{lvl.EsStrike.ToString("0.####", inv)}";
 
                 string lineTag = $"TLADeLine_{key}";
-                // Line styles as the TradingView indicator: walls and Zero Gamma in the user's style,
-                // Max Pain / Vol Bands dotted, EM and Delta Flip dashed, Charm Magnet solid.
-                DashStyleHelper lineStyle =
-                    IsCharm(lvl.Type) ? DashStyleHelper.Solid :
-                    (lvl.Type == "MP" || lvl.Type == "VH" || lvl.Type == "VL" || isStructure) ? DashStyleHelper.Dot :
-                    (lvl.Type == "EH" || lvl.Type == "EL" || lvl.Type == "EHR" || lvl.Type == "ELR" || IsDeltaFlip(lvl.Type)) ? DashStyleHelper.Dash :
-                    UserLineStyle();
+                DashStyleHelper lineStyle = isGex ? DashStyleHelper.Solid :
+                                            isSystem ? DashStyleHelper.Dash : DashStyleHelper.Dot;
                 int userW = Math.Max(1, Math.Min(10, LevelLineWidth));
                 int lineWidth = (lvl.Type == "ZG" || lvl.Type == "MP") ? Math.Max(2, userW) : userW;
-                if (isWallFlipped) lineWidth = Math.Max(1, lineWidth - 1);
                 Draw.Line(this, lineTag, false, leftBarsAgo, y, rightBarsAgo, y, lvlBrush, lineStyle, lineWidth);
                 _tags.Add(lineTag);
 
                 if (ShowLabels)
                 {
                     string textTag = $"TLADeText_{key}";
-                    string display = $"{FormatPrice(lvl.EsStrike)} {LevelName(lvl.Type, lvl.Label)}{(isWallFlipped ? " \u21BA" : "")}";
+                    string display = $"{FormatPrice(lvl.EsStrike)} {lvl.Label}";
                     var t = Draw.Text(this, textTag, display, labelBarsAgo, y, lvlBrush);
                     if (t != null && _labelFont != null)
                         t.Font = _labelFont;
                     _tags.Add(textTag);
                 }
-                if (isGex || isSystem)
-                    _alertLevels.Add(new AlertLevel { Price = y, Name = $"{FormatPrice(lvl.EsStrike)} {LevelName(lvl.Type, lvl.Label)}", Kind = isGex ? "wall" : "system" });
             }
         }
 
@@ -1467,22 +1206,6 @@ namespace NinjaTrader.NinjaScript.Indicators
             }
         }
 
-        // The indicator is an intraday tool: above 1H (4H, Daily, Weekly…) it draws nothing unless asked.
-        private bool TfActive()
-        {
-            if (ShowAboveH1) return true;
-            switch (BarsPeriod.BarsPeriodType)
-            {
-                case BarsPeriodType.Minute: return BarsPeriod.Value <= 60;
-                case BarsPeriodType.Second: return true;
-                case BarsPeriodType.Day:
-                case BarsPeriodType.Week:
-                case BarsPeriodType.Month:
-                case BarsPeriodType.Year: return false;
-                default: return true;   // tick / range / volume bars: intraday
-            }
-        }
-
         private void ClearAll()
         {
             foreach (var t in _tags)
@@ -1491,47 +1214,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         }
 
         private bool IsGex(string t) => t == "CW" || t == "PW" || t == "GL";
-        private bool IsSystem(string t) => t == "ZG" || t == "MP" || t == "EH" || t == "EL" || t == "EHR" || t == "ELR" || t == "VH" || t == "VL";
-        private bool IsCharm(string t) => t == "CM";
-        private bool IsDeltaFlip(string t) => t == "DF";
-
-        // One name per level code, the same words on every platform. Labels read "price + name";
-        // the code (CW, ZG, EHR…) is for the feed and the tooltip, not the chart.
-        private static string LevelName(string code, string feedLabel)
-        {
-            switch (code)
-            {
-                case "CW": return "Call Wall";
-                case "PW": return "Put Wall";
-                case "GL": return "GEX Level";
-                case "ZG": return "Zero Gamma";
-                case "MP": return "Max Pain";
-                case "EH": return "EM High Globex";
-                case "EL": return "EM Low Globex";
-                case "EHR": return "EM High RTH";
-                case "ELR": return "EM Low RTH";
-                case "VH": return "Vol High";
-                case "VL": return "Vol Low";
-                case "CM": return "Charm Magnet";
-                case "DF": return "Delta Flip";
-                case "PDH": return "Previous Day High";
-                case "PDL": return "Previous Day Low";
-                case "PWH": return "Previous Week High";
-                case "PWL": return "Previous Week Low";
-                default: return feedLabel ?? code;
-            }
-        }
-
-        // The TradingView palette, so the two charts read the same
-        private static readonly Color C_ZG = (Color)ColorConverter.ConvertFromString("#9ca3af");
-        private static readonly Color C_MP = (Color)ColorConverter.ConvertFromString("#ef4444");
-        private static readonly Color C_EM = (Color)ColorConverter.ConvertFromString("#3b82f6");
-        private static readonly Color C_VB = (Color)ColorConverter.ConvertFromString("#9ca3af");
-        private static readonly Color C_STRUCT = (Color)ColorConverter.ConvertFromString("#9ca3af");
-        private static readonly Color C_CHARM = (Color)ColorConverter.ConvertFromString("#f97316");
-        private static readonly Color C_DFLIP = (Color)ColorConverter.ConvertFromString("#f59e0b");
-        private static readonly Color C_BO_BULL = (Color)ColorConverter.ConvertFromString("#22c55e");
-        private static readonly Color C_BO_BEAR = (Color)ColorConverter.ConvertFromString("#ef4444");
+        private bool IsSystem(string t) => t == "ZG" || t == "MP" || t == "EH" || t == "EL" || t == "VH" || t == "VL";
         private bool IsStructure(string t) => t == "PDH" || t == "PDL" || t == "PWH" || t == "PWL";
 
         private bool NearlyEqual(double a, double b)
@@ -1574,93 +1257,13 @@ namespace NinjaTrader.NinjaScript.Indicators
             string t = EffectiveDisplayTicker().ToUpperInvariant();
             switch (t)
             {
-                // No built-in spread: when the data string carries no S: the strikes stay in
-                // futures points (identity) instead of being shifted by a stale number.
-                case "SPX": return EsSpxSpread <= 0 ? esPrice : esPrice - EsSpxSpread;
-                case "SPY": return EsSpxSpread <= 0 ? esPrice : (esPrice - EsSpxSpread) / 10.0;
+                case "SPX": return esPrice - EsSpxSpread;
+                case "SPY": return (esPrice - EsSpxSpread) / 10.0;
                 case "NQ":  return esPrice;  // raw NQ price
-                case "NDX": return NqNdxSpread <= 0 ? esPrice : esPrice - NqNdxSpread;
-                case "QQQ": return NqNdxSpread <= 0 ? esPrice : (esPrice - NqNdxSpread) / (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0);
+                case "NDX": return esPrice - NqNdxSpread;
+                case "QQQ": return (esPrice - NqNdxSpread) / 40.0;
                 default:    return esPrice;  // ES
             }
-        }
-
-        // Chart-display price back into futures space (the strikes' space)
-        private double ToFuturesSpace(double displayPrice)
-        {
-            string t = EffectiveDisplayTicker().ToUpperInvariant();
-            switch (t)
-            {
-                case "SPX": return EsSpxSpread <= 0 ? displayPrice : displayPrice + EsSpxSpread;
-                case "SPY": return EsSpxSpread <= 0 ? displayPrice : displayPrice * 10.0 + EsSpxSpread;
-                case "NDX": return NqNdxSpread <= 0 ? displayPrice : displayPrice + NqNdxSpread;
-                case "QQQ": return NqNdxSpread <= 0 ? displayPrice : displayPrice * (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0) + NqNdxSpread;
-                default:    return displayPrice;
-            }
-        }
-
-        // A CLOSE that crosses the level: previous close on one side, the close that just printed on
-        // the other. Evaluated when the bar closes, so a wick through a wall does not fire.
-        private void CheckLevelAlerts()
-        {
-            double c1 = Close[1], c2 = Close[2];
-            foreach (var al in _alertLevels)
-            {
-                bool wanted = al.Kind == "wall" ? AlertWalls : al.Kind == "system" ? AlertSystem : AlertBos;
-                if (!wanted) continue;
-                bool up = c2 < al.Price && c1 >= al.Price;
-                bool down = c2 > al.Price && c1 <= al.Price;
-                if (!up && !down) continue;
-                string msg = $"TLADe {al.Name} crossed {(up ? "UP" : "DOWN")}";
-                Alert($"TLADeX_{al.Kind}_{al.Price.ToString("0.####", inv)}", Priority.High, msg,
-                      NinjaTrader.Core.Globals.InstallDir + @"\sounds\Alert1.wav", 10, Brushes.Black, Brushes.Orange);
-            }
-        }
-
-        private void ResetWallFlips()
-        {
-            _wallCounter.Clear(); _wallFlipped.Clear(); _wallType.Clear();
-            foreach (var lvl in _levels)
-            {
-                if (lvl.Type != "CW" && lvl.Type != "PW") continue;
-                if (_wallType.ContainsKey(lvl.EsStrike)) continue;
-                _wallType[lvl.EsStrike] = lvl.Type;
-                _wallCounter[lvl.EsStrike] = 0;
-                _wallFlipped[lvl.EsStrike] = false;
-            }
-        }
-
-        private void UpdateWallFlips(double close5mDisplay)
-        {
-            if (_wallType.Count == 0) return;
-            double c = ToFuturesSpace(close5mDisplay);
-            foreach (var strike in new List<double>(_wallType.Keys))
-            {
-                bool isF = _wallFlipped[strike];
-                int cnt = _wallCounter[strike];
-                bool beyond = _wallType[strike] == "CW" ? (isF ? c < strike : c > strike) : (isF ? c > strike : c < strike);
-                if (beyond)
-                {
-                    cnt++;
-                    if (cnt >= 2) { isF = !isF; cnt = 0; _flipDirty = true; }
-                }
-                else cnt = 0;
-                _wallCounter[strike] = cnt;
-                _wallFlipped[strike] = isF;
-            }
-        }
-
-        private bool IsWallFlipped(double strike)
-        {
-            bool f; return _wallFlipped.TryGetValue(strike, out f) && f;
-        }
-
-        private DashStyleHelper UserLineStyle()
-        {
-            string st = (LineStyle ?? "").Trim();
-            if (st.Equals("Solid", StringComparison.OrdinalIgnoreCase)) return DashStyleHelper.Solid;
-            if (st.Equals("Dashed", StringComparison.OrdinalIgnoreCase)) return DashStyleHelper.Dash;
-            return DashStyleHelper.Dot;
         }
 
         private string FormatPrice(double esPrice)
@@ -1739,10 +1342,10 @@ namespace NinjaTrader.NinjaScript.Indicators
                  GroupName = "Ticker Settings", Order = 0)]
         public string DisplayTicker { get; set; }
 
-        [Display(Name = "ES-SPX Spread (0 = from data string S:)", GroupName = "Ticker Settings", Order = 1)]
+        [Display(Name = "ES-SPX Spread", GroupName = "Ticker Settings", Order = 1)]
         public double EsSpxSpread { get; set; }
 
-        [Display(Name = "NQ-NDX Spread (0 = from data string S:)", GroupName = "Ticker Settings", Order = 2)]
+        [Display(Name = "NQ-NDX Spread (default 40)", GroupName = "Ticker Settings", Order = 2)]
         public double NqNdxSpread { get; set; }
 
         [Display(Name = "GEX Data (paste from TLADe)", GroupName = "General Settings", Order = 0)]
@@ -1756,12 +1359,6 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         [Display(Name = "Show Structure Levels (PDH/PDL/PWH/PWL)", GroupName = "Level Visibility", Order = 2)]
         public bool ShowStructureLevels { get; set; }
-
-        [Display(Name = "Show Charm Magnet (CM)", GroupName = "Level Visibility", Order = 3)]
-        public bool ShowCharmMagnet { get; set; }
-
-        [Display(Name = "Show Delta Flip (DF)", GroupName = "Level Visibility", Order = 4)]
-        public bool ShowDeltaFlip { get; set; }
 
         [Display(Name = "Show Zero Gamma line (even when System off)", GroupName = "Level Visibility", Order = 8)]
         public bool ShowZeroGamma { get; set; }
@@ -1825,9 +1422,6 @@ namespace NinjaTrader.NinjaScript.Indicators
         [Display(Name = "Line Right Bars (from label)", GroupName = "Price Levels Style", Order = 3)]
         public int LineRightBars { get; set; }
 
-        [Display(Name = "Line Style (Solid/Dashed/Dotted)", GroupName = "Price Levels Style", Order = 3)]
-        public string LineStyle { get; set; }
-
         [Range(1, 10)]
         [Display(Name = "Level Line Width (GEX/system)", GroupName = "Price Levels Style", Order = 4)]
         public int LevelLineWidth { get; set; }
@@ -1868,51 +1462,10 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         // ── v1.1: Breakout / Session AVWAP / Session Boxes ──
 
-        [Display(Name = "Show Breakout Structure",
-                 Description = "Breakouts computed from the chart's own bars, on closed bars of each timeframe: a close beyond the previous bar's extreme with the body past the level larger than the shadow. A breakout dies when a later bar of the same timeframe, in the opposite direction, closes back through it.",
-                 GroupName = "Breakout Structure", Order = 0)]
+        [Display(Name = "Show Breakout Levels (BOS H4/H1)",
+                 Description = "Break-of-Structure levels computed locally from the chart's own bars — same strict rule as the TLADe terminal (body beyond the level > shadow, invalidated by any later close back through).",
+                 GroupName = "Level Visibility", Order = 8)]
         public bool ShowBreakoutLevels { get; set; }
-
-        [Display(Name = "Monthly", GroupName = "Breakout Structure", Order = 1)]
-        public bool ShowBosM { get; set; }
-        [Display(Name = "Weekly", GroupName = "Breakout Structure", Order = 2)]
-        public bool ShowBosW { get; set; }
-        [Display(Name = "Daily", GroupName = "Breakout Structure", Order = 3)]
-        public bool ShowBosD { get; set; }
-        [Display(Name = "4H", GroupName = "Breakout Structure", Order = 4)]
-        public bool ShowBosH4 { get; set; }
-        [Display(Name = "1H", GroupName = "Breakout Structure", Order = 5)]
-        public bool ShowBosH1 { get; set; }
-
-        [Display(Name = "Draw on timeframes above 1H", Description = "Off: on 4H, Daily, Weekly and Monthly charts the indicator stays silent.", GroupName = "Ticker Settings", Order = 9)]
-        public bool ShowAboveH1 { get; set; }
-
-        [Display(Name = "Enable Level Cross Alerts", GroupName = "Alerts", Order = 0)]
-        public bool EnableAlerts { get; set; }
-        [Display(Name = "Call/Put Walls", GroupName = "Alerts", Order = 1)]
-        public bool AlertWalls { get; set; }
-        [Display(Name = "ZG / Max Pain / EM / Vol Bands", GroupName = "Alerts", Order = 2)]
-        public bool AlertSystem { get; set; }
-        [Display(Name = "Breakouts", GroupName = "Alerts", Order = 3)]
-        public bool AlertBos { get; set; }
-
-        [Display(Name = "Show Confluence Zones", Description = "Boxes where several levels sit within a band sized on the EM range.", GroupName = "Confluence Zones", Order = 0)]
-        public bool ShowConfluence { get; set; }
-
-        [Range(2, 5)]
-        [Display(Name = "Min cluster size for box", GroupName = "Confluence Zones", Order = 1)]
-        public int ConfluenceMinSize { get; set; }
-
-        [Range(1.0, 30.0)]
-        [Display(Name = "Band Width (% of EM)", Description = "Total band as a percentage of the EM range (EM High − EM Low), split half above and half below (7% = ±3.5%).", GroupName = "Confluence Zones", Order = 2)]
-        public double ConfluenceEmPct { get; set; }
-
-        [Display(Name = "Show AVWAP labels", GroupName = "Session AVWAP", Order = 6)]
-        public bool ShowAvwapLabels { get; set; }
-
-        [Range(1, 10)]
-        [Display(Name = "Keep last N per timeframe", Description = "How many live breakouts to keep for each timeframe; the oldest goes when a new one forms.", GroupName = "Breakout Structure", Order = 6)]
-        public int BosKeepPerTf { get; set; }
 
         [Display(Name = "Show Session AVWAP — Asia", GroupName = "Session AVWAP", Order = 0)]
         public bool ShowAvwapAsia { get; set; }
