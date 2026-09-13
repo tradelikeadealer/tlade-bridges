@@ -84,7 +84,8 @@ cross alerts, and the >1H timeframe gate. Contributions welcome.
 
 Create a C# class library project targeting the .NET version of your
 Quantower install, reference `TradingPlatform.BusinessLayer.dll` from
-`<Quantower folder>\TradingPlatform\<version>\bin\`, add
+`<Quantower folder>\TradingPlatform\<version>\bin\` (e.g.
+`C:\Quantower\TradingPlatform\v1.146.18\bin\`), add
 `GammaExposure.cs`, build, and copy the resulting DLL as in *Install*.
 
 ## Data contract
