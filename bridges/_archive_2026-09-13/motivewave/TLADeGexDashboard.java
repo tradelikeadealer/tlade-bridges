@@ -1,8 +1,3 @@
-// TLADe GEX Levels — MotiveWave — release 3.5.0 (13 September 2026)
-// Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
-// rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
-// confluence zones (% of EM), silent above 1H, level-cross signals. Layout (right-edge chips,
-// profile) is MotiveWave's own.
 package study_examples;
 
 import java.awt.BasicStroke;
@@ -135,14 +130,6 @@ public class TLADeGexDashboard extends Study
   final static String AUTO_FETCH     = "autoFetch";
   final static String API_KEY        = "apiKey";
 
-  final static String SHOW_DELTA_FLIP = "showDeltaFlip";
-  final static String LINE_STYLE      = "lineStyle";
-  final static String SHOW_ABOVE_H1   = "showAboveH1";
-  final static String SHOW_BOS_M = "showBosM", SHOW_BOS_W = "showBosW", SHOW_BOS_D = "showBosD",
-                      SHOW_BOS_H4 = "showBosH4", SHOW_BOS_H1 = "showBosH1", BOS_KEEP = "bosKeepPerTf";
-  final static String SHOW_CONFLUENCE = "showConfluence", CONF_MIN_SIZE = "confluenceMinSize", CONF_EM_PCT = "confluenceEmPct";
-  final static String ENABLE_ALERTS = "enableAlerts", ALERT_WALLS = "alertWalls", ALERT_SYSTEM = "alertSystem", ALERT_BOS = "alertBos";
-  final static String SIG_WALL = "tladeWall", SIG_SYSTEM = "tladeSystem", SIG_BO = "tladeBreakout";
   final static String SHOW_STATUS    = "showStatus";
   final static String STATUS_POS     = "statusPos";   // TL / TR / BL / BR
 
@@ -179,18 +166,9 @@ public class TLADeGexDashboard extends Study
   {
     double price;       // converted to display-instrument price
     Color color;
-    int style;          // 0 solid, 1 dashed, 2 dotted
+    boolean gex, sys;   // stroke style: gex=solid, sys=dash, else=dot
     int lineWidth;
     String label;       // "" when labels hidden
-    String kind;        // "wall" | "system" | "bo" | "" — what the cross alerts watch
-    String alertName;
-  }
-
-  private static class DrawZone
-  {
-    double top, bottom;
-    Color color;
-    String label;
   }
 
   private static class DrawProf
@@ -269,10 +247,6 @@ public class TLADeGexDashboard extends Study
   // ES-SPX spread carried by an "S:" data prefix. Overrides the manual spread for
   // price conversion, again without mutating settings from inside calc.
   private double spreadOverride = Double.NaN;
-  private double ndxQqqRatio = Double.NaN;     // NDX→QQQ ratio from the data string (R:)
-  private volatile List<DrawZone> drawZones = new ArrayList<>();
-  private final java.util.Map<Double, Boolean> wallFlipped = new java.util.HashMap<>();
-  private final java.util.Map<String, Integer> alertedAt = new java.util.HashMap<>();
 
   // ================================================================================================
   // Initialization
@@ -291,10 +265,8 @@ public class TLADeGexDashboard extends Study
       tickers.add(new NVP(t, t));
     tickerGrp.addRow(new DiscreteDescriptor(DISPLAY_TICKER, "Display Ticker", "ES", tickers)
         .setDescription("Strikes are quoted in ES points; this maps them to the chart instrument."));
-    tickerGrp.addRow(new DoubleDescriptor(ES_SPX_SPREAD, "ES-SPX Spread (0 = from data string S:)", 0.0, 0.0, 1000.0, 0.01));
-    tickerGrp.addRow(new DoubleDescriptor(NQ_NDX_SPREAD, "NQ-NDX Spread (0 = from data string S:)", 0.0, 0.0, 1000.0, 0.01));
-    tickerGrp.addRow(new BooleanDescriptor(SHOW_ABOVE_H1, "Draw on timeframes above 1H", false)
-        .setDescription("Off: on 4H, Daily, Weekly and Monthly charts the indicator stays silent."));
+    tickerGrp.addRow(new DoubleDescriptor(ES_SPX_SPREAD, "ES-SPX Spread", 24.0, 0.0, 1000.0, 0.01));
+    tickerGrp.addRow(new DoubleDescriptor(NQ_NDX_SPREAD, "NQ-NDX Spread", 40.0, 0.0, 1000.0, 0.01));
 
     // --- Data -----------------------------------------------------------------------------------
     SettingTab dataTab = sd.addTab("Data");
@@ -313,31 +285,9 @@ public class TLADeGexDashboard extends Study
     SettingGroup visGrp = visTab.addGroup("Visibility");
     visGrp.addRow(new BooleanDescriptor(SHOW_GEX, "Show GEX Levels (CW/PW/GL)", true));
     visGrp.addRow(new BooleanDescriptor(SHOW_SYSTEM, "Show System Levels (ZG/MP/EH/EL/VH/VL)", true));
-    visGrp.addRow(new BooleanDescriptor(SHOW_STRUCTURE, "Show Structure Levels (PDH/PDL/PWH/PWL)", false));
-    visGrp.addRow(new BooleanDescriptor(SHOW_CHARM_MAGNET, "Show Charm Magnet (CM)", false));
-    visGrp.addRow(new BooleanDescriptor(SHOW_DELTA_FLIP, "Show Delta Flip (DF)", true));
-
-    SettingGroup bosGrp = visTab.addGroup("Breakout Structure");
-    bosGrp.addRow(new BooleanDescriptor(SHOW_BREAKOUT, "Show Breakout Structure", false)
-        .setDescription("Breakouts from the chart's own bars, on closed bars of each timeframe. A breakout dies when a later bar of the same timeframe, in the opposite direction, closes back through it."));
-    bosGrp.addRow(new BooleanDescriptor(SHOW_BOS_M, "Monthly", false));
-    bosGrp.addRow(new BooleanDescriptor(SHOW_BOS_W, "Weekly", false));
-    bosGrp.addRow(new BooleanDescriptor(SHOW_BOS_D, "Daily", true));
-    bosGrp.addRow(new BooleanDescriptor(SHOW_BOS_H4, "4H", true));
-    bosGrp.addRow(new BooleanDescriptor(SHOW_BOS_H1, "1H", true));
-    bosGrp.addRow(new IntegerDescriptor(BOS_KEEP, "Keep last N per timeframe", 2, 1, 10, 1));
-
-    SettingGroup confGrp = visTab.addGroup("Confluence Zones");
-    confGrp.addRow(new BooleanDescriptor(SHOW_CONFLUENCE, "Show Confluence Zones", false));
-    confGrp.addRow(new IntegerDescriptor(CONF_MIN_SIZE, "Min cluster size for box", 3, 2, 5, 1));
-    confGrp.addRow(new DoubleDescriptor(CONF_EM_PCT, "Band Width (% of EM)", 7.0, 1.0, 30.0, 0.5)
-        .setDescription("Total band as a percentage of the EM range (EM High − EM Low), split half above and half below (7% = ±3.5%). No EM in the data → no zones."));
-
-    SettingGroup alertGrp = visTab.addGroup("Alerts");
-    alertGrp.addRow(new BooleanDescriptor(ENABLE_ALERTS, "Enable Level Cross Alerts", false));
-    alertGrp.addRow(new BooleanDescriptor(ALERT_WALLS, "Call/Put Walls", true));
-    alertGrp.addRow(new BooleanDescriptor(ALERT_SYSTEM, "ZG / Max Pain / EM / Vol Bands", true));
-    alertGrp.addRow(new BooleanDescriptor(ALERT_BOS, "Breakouts", true));
+    visGrp.addRow(new BooleanDescriptor(SHOW_STRUCTURE, "Show Structure Levels (PDH/PDL/PWH/PWL)", true));
+    visGrp.addRow(new BooleanDescriptor(SHOW_BREAKOUT, "Show Breakout Areas (BL/BS)", true));
+    visGrp.addRow(new BooleanDescriptor(SHOW_CHARM_MAGNET, "Show Charm Magnet (CM)", true));
 
     SettingGroup avwapGrp = dataTab.addGroup("Session AVWAP");
     avwapGrp.addRow(new BooleanDescriptor(SHOW_AVWAP_ASIA, "Show Session AVWAP — Asia", true));
@@ -374,11 +324,6 @@ public class TLADeGexDashboard extends Study
     // --- Labels ---------------------------------------------------------------------------------
     SettingGroup labelGrp = colorTab.addGroup("Labels");
     labelGrp.addRow(new BooleanDescriptor(SHOW_LABELS, "Show Labels", true));
-    List<NVP> lineStyles = new ArrayList<>();
-    lineStyles.add(new NVP("Solid", "Solid"));
-    lineStyles.add(new NVP("Dashed", "Dashed"));
-    lineStyles.add(new NVP("Dotted", "Dotted"));
-    labelGrp.addRow(new DiscreteDescriptor(LINE_STYLE, "Line Style (walls, Zero Gamma)", "Dotted", lineStyles));
     labelGrp.addRow(new IntegerDescriptor(LABEL_SIZE, "Label Font Size", 11, 6, 50, 1));
 
     // --- Profile --------------------------------------------------------------------------------
@@ -408,9 +353,6 @@ public class TLADeGexDashboard extends Study
     // --- Runtime --------------------------------------------------------------------------------
     RuntimeDescriptor rd = createRD();
     rd.setLabelSettings(DISPLAY_TICKER);
-    rd.declareSignal(SIG_WALL, "Call/Put Wall crossed");
-    rd.declareSignal(SIG_SYSTEM, "ZG / Max Pain / EM / Vol Band crossed");
-    rd.declareSignal(SIG_BO, "Breakout crossed");
   }
 
   @Override
@@ -592,7 +534,6 @@ public class TLADeGexDashboard extends Study
 
     double spot = lastClose(series);
     buildDrawModel(spot, ctx);
-    if (getSettings().getBoolean(ENABLE_ALERTS, false)) checkLevelAlerts(ctx, series);
 
     buildStatus(series, instr, spot, dataStr);
 
@@ -600,29 +541,6 @@ public class TLADeGexDashboard extends Study
     beginFigureUpdate();
     addFigure(new DashboardFigure());
     endFigureUpdate();
-  }
-
-  // A CLOSE that crosses a drawn level: the close before on one side, the last closed bar on the
-  // other. Once per level per bar, so a recalculation does not re-fire.
-  private void checkLevelAlerts(DataContext ctx, DataSeries series)
-  {
-    int i = series.size() - 2;            // last closed bar
-    if (i < 1) return;
-    double c1 = series.getClose(i), c2 = series.getClose(i - 1);
-    boolean wWalls = getSettings().getBoolean(ALERT_WALLS, true), wSys = getSettings().getBoolean(ALERT_SYSTEM, true), wBo = getSettings().getBoolean(ALERT_BOS, true);
-    for (DrawLevel d : drawLevels) {
-      if (d.kind == null || d.kind.isEmpty()) continue;
-      boolean wanted = d.kind.equals("wall") ? wWalls : d.kind.equals("system") ? wSys : wBo;
-      if (!wanted) continue;
-      boolean up = c2 < d.price && c1 >= d.price, down = c2 > d.price && c1 <= d.price;
-      if (!up && !down) continue;
-      String key = d.kind + "@" + d.price;
-      Integer at = alertedAt.get(key);
-      if (at != null && at == i) continue;
-      alertedAt.put(key, i);
-      String sig = d.kind.equals("wall") ? SIG_WALL : d.kind.equals("system") ? SIG_SYSTEM : SIG_BO;
-      try { ctx.signal(i, sig, "TLADe " + d.alertName + " crossed " + (up ? "UP" : "DOWN"), d.price); } catch (Exception ignore) { }
-    }
   }
 
   /** Compose the diagnostic snapshot shown by the status banner. */
@@ -668,17 +586,6 @@ public class TLADeGexDashboard extends Study
   {
     List<DrawLevel> newLevels = new ArrayList<>();
     List<DrawProf> newProfile = new ArrayList<>();
-    List<DrawZone> newZones = new ArrayList<>();
-    boolean active = tfActive(ctx);
-    if (!active) {
-      drawLevels = newLevels; drawProfile = newProfile; drawZones = newZones;
-      avwapAsia = avwapEU = avwapUS = avwapPD = new double[0];
-      return;
-    }
-    computeWallFlips(ctx);
-    // Session AVWAP arrays first: the confluence zones read their last values.
-    try { computeAvwapForSeries(ctx.getDataSeries()); }
-    catch (Exception ignore) { /* keep the previous AVWAP arrays on failure */ }
     profWidthBars = Math.max(1, getSettings().getInteger(PROFILE_WIDTH, 70));
     profHeightTicks = Math.max(1, getSettings().getInteger(PROFILE_HEIGHT, 8));
 
@@ -720,7 +627,6 @@ public class TLADeGexDashboard extends Study
         boolean struct = isStructure(lvl.type);
         boolean breakout = isBreakout(lvl.type);
         boolean charm    = isCharmMagnet(lvl.type);
-        boolean dflip    = isDeltaFlip(lvl.type);
 
         boolean passesThreshold = !enableThresh || !gex || lvl.magnitude == 0.0
             || lvl.magnitude >= threshold;
@@ -735,9 +641,9 @@ public class TLADeGexDashboard extends Study
           else if (isAbove && gexAboveDrawn < halfMax) shouldShow = true;
           else if (!isAbove && gexBelowDrawn < halfMax) shouldShow = true;
         } else if (sys && showSystem) shouldShow = true;
-        // structure and breakouts from the feed are ignored: both are computed from the chart's bars
-        else if (charm    && getSettings().getBoolean(SHOW_CHARM_MAGNET, false)) shouldShow = true;
-        else if (dflip    && getSettings().getBoolean(SHOW_DELTA_FLIP, true)) shouldShow = true;
+        else if (struct && showStructure) shouldShow = true;
+        else if (breakout && getSettings().getBoolean(SHOW_BREAKOUT, true)) shouldShow = true;
+        else if (charm    && getSettings().getBoolean(SHOW_CHARM_MAGNET, true)) shouldShow = true;
 
         if (!shouldShow || !inRange) continue;
 
@@ -745,17 +651,13 @@ public class TLADeGexDashboard extends Study
           if (isAbove) gexAboveDrawn++; else gexBelowDrawn++;
         }
 
-        boolean flipped = gex && Boolean.TRUE.equals(wallFlipped.get(lvl.esStrike));
         DrawLevel d = new DrawLevel();
         d.price = y;
         d.color = colorFor(lvl, y, spot);
-        d.style = styleFor(lvl.type);
+        d.gex = gex;
+        d.sys = sys;
         d.lineWidth = (lvl.type.equals("ZG") || lvl.type.equals("MP")) ? 2 : 1;
-        if (flipped) d.lineWidth = Math.max(1, d.lineWidth - 1);
-        String nm = formatPrice(lvl.esStrike) + " " + levelName(lvl.type, lvl.label) + (flipped ? " \u21BA" : "");
-        d.label = showLabels ? nm : "";
-        d.kind = gex ? "wall" : (sys ? "system" : "");
-        d.alertName = nm;
+        d.label = showLabels ? (formatPrice(lvl.esStrike) + " " + lvl.label) : "";
         newLevels.add(d);
       }
 
@@ -763,7 +665,7 @@ public class TLADeGexDashboard extends Study
       // price-dependent levels computed front-end-side, no longer shipped in the feed).
       if (showStructure) {
         String[] paLabels = { "PDH", "PDL", "PWH", "PWL" };
-        java.awt.Color paColor = C_STRUCT;
+        java.awt.Color paColor = new java.awt.Color(0x94, 0xA3, 0xB8);
         for (double[] pa : computeLocalPA(ctx.getDataSeries())) {
           double yy = pa[0];
           boolean inR = !onlyNear || (Math.abs(spot - yy) / Math.max(1e-9, spot) * 100.0 <= nearPct);
@@ -771,91 +673,31 @@ public class TLADeGexDashboard extends Study
           DrawLevel dl = new DrawLevel();
           dl.price = yy;
           dl.color = paColor;
-          dl.style = 2;
+          dl.gex = false;
+          dl.sys = false;
           dl.lineWidth = 1;
-          dl.label = showLabels ? (formatPrice(yy) + " " + levelName(paLabels[(int) pa[1]], null)) : "";
-          dl.kind = "";
+          dl.label = showLabels ? (formatPrice(yy) + " " + paLabels[(int) pa[1]]) : "";
           newLevels.add(dl);
         }
       }
 
       // v3.x — local Breakout (BOS H4/H1) from chart bars (Mother is GEX-only; price-dependent
       // levels computed front-end-side, 1:1 with NT8/ATAS/terminal).
-      if (getSettings().getBoolean(SHOW_BREAKOUT, false)) {
+      if (getSettings().getBoolean(SHOW_BREAKOUT, true)) {
+        java.awt.Color bullC = new java.awt.Color(0x10, 0xB9, 0x81);
+        java.awt.Color bearC = new java.awt.Color(0xF4, 0x3F, 0x5E);
         for (Object[] b : computeLocalBOS(ctx.getDataSeries())) {
           double yb = (Double) b[0];
           boolean inR = !onlyNear || (Math.abs(spot - yb) / Math.max(1e-9, spot) * 100.0 <= nearPct);
           if (!inR) continue;
-          boolean bull = (Boolean) b[2];
-          String tf = (String) b[3];
-          boolean higherTf = tf.equals("M") || tf.equals("W") || tf.equals("D");
           DrawLevel db = new DrawLevel();
           db.price = yb;
-          db.color = bull ? C_BO_BULL : C_BO_BEAR;
-          db.style = higherTf ? 0 : 1;
-          db.lineWidth = tf.equals("M") ? 3 : tf.equals("W") ? 2 : 1;
-          String nm = (String) b[1] + " " + String.format(Locale.ROOT, "%.2f", yb);
-          db.label = showLabels ? nm : "";
-          db.kind = "bo";
-          db.alertName = nm;
+          db.color = ((Boolean) b[2]) ? bullC : bearC;
+          db.gex = false;
+          db.sys = false;
+          db.lineWidth = 1;
+          db.label = showLabels ? (formatPrice(yb) + " " + (String) b[1]) : "";
           newLevels.add(db);
-        }
-      }
-
-      // ---- Confluence zones: every level on the chart, clustered within a band sized on the EM range ----
-      if (getSettings().getBoolean(SHOW_CONFLUENCE, false)) {
-        double emH = Double.NaN, emL = Double.NaN;
-        for (LevelEntry lvl : levels) {
-          if (lvl.type.equals("EH")) emH = convertPrice(lvl.esStrike);
-          else if (lvl.type.equals("EL")) emL = convertPrice(lvl.esStrike);
-        }
-        if (!Double.isNaN(emH) && !Double.isNaN(emL) && emH - emL > 0) {
-          double band = (emH - emL) * (getSettings().getDouble(CONF_EM_PCT, 7.0) / 100.0) / 2.0;
-          java.util.List<double[]> pts = new java.util.ArrayList<>();   // {price}
-          java.util.List<String> names = new java.util.ArrayList<>();
-          for (LevelEntry lvl : levels) {
-            if (!(isGex(lvl.type) || isSystem(lvl.type))) continue;
-            pts.add(new double[] { convertPrice(lvl.esStrike) });
-            names.add(formatPrice(lvl.esStrike) + " " + levelName(lvl.type, lvl.label));
-          }
-          for (DrawLevel d : newLevels) {
-            if ("bo".equals(d.kind) || (d.kind != null && d.kind.isEmpty() && !d.label.isEmpty())) {
-              pts.add(new double[] { d.price }); names.add(d.alertName != null ? d.alertName : d.label);
-            }
-          }
-          double[][] av = { avwapAsia, avwapEU, avwapUS, avwapPD };
-          String[] avn = { "AVWAP Asia", "AVWAP EU", "AVWAP US", "AVWAP US Prev Day" };
-          for (int i = 0; i < 4; i++) {
-            if (av[i] == null || av[i].length == 0) continue;
-            double v = av[i][av[i].length - 1];
-            if (Double.isNaN(v) || v <= 0) continue;
-            pts.add(new double[] { v }); names.add(String.format(Locale.ROOT, "%.0f", v) + " " + avn[i]);
-          }
-          int n = pts.size();
-          Integer[] idx = new Integer[n];
-          for (int i = 0; i < n; i++) idx[i] = i;
-          java.util.Arrays.sort(idx, (a, b2) -> Double.compare(pts.get(a)[0], pts.get(b2)[0]));
-          int minSize = Math.max(2, getSettings().getInteger(CONF_MIN_SIZE, 3));
-          int i0 = 0;
-          while (i0 < n) {
-            double cMin = pts.get(idx[i0])[0], cMax = cMin;
-            int size = 1, j = i0 + 1;
-            while (j < n) {
-              double next = pts.get(idx[j])[0];
-              if (next - cMin <= 2 * band) { cMax = next; size++; j++; } else break;
-            }
-            if (size >= minSize) {
-              int capped = Math.min(size, 5);
-              Color base = capped >= 5 ? new Color(0xef, 0x44, 0x44) : capped >= 4 ? new Color(0xfb, 0x92, 0x3c) : new Color(0xfa, 0xcc, 0x15);
-              int alpha = capped >= 5 ? 89 : capped >= 4 ? 77 : 64;
-              DrawZone z = new DrawZone();
-              z.top = cMax; z.bottom = cMin;
-              z.color = new Color(base.getRed(), base.getGreen(), base.getBlue(), alpha);
-              z.label = capped >= 5 ? "UBER" : capped + "x";
-              newZones.add(z);
-            }
-            i0 = j;
-          }
         }
       }
     }
@@ -888,8 +730,12 @@ public class TLADeGexDashboard extends Study
     // always reads a fully-built model (or the previous one), never a partial.
     drawLevels = newLevels;
     drawProfile = newProfile;
-    drawZones = newZones;
 
+    // v1.3 — populate the 4 Session AVWAP arrays from the same DataSeries.
+    // Runs after the level model so a slow PA → AVWAP recompute can't delay
+    // the GEX lines from showing up.
+    try { computeAvwapForSeries(ctx.getDataSeries()); }
+    catch (Exception ignore) { /* keep the previous AVWAP arrays on failure */ }
   }
 
   /** Live bars: nudge a redraw so the right-edge anchored figure stays put. */
@@ -928,15 +774,6 @@ public class TLADeGexDashboard extends Study
         if (parsed != null && parsed > 0)
           spreadOverride = parsed;
         raw = raw.substring(sEnd + 1);
-      }
-    }
-    // R: NDX→QQQ ratio (NQ family strings only)
-    if (raw.startsWith("R:")) {
-      int rEnd = raw.indexOf('|');
-      if (rEnd > 2) {
-        Double parsed = tryParse(raw.substring(2, rEnd));
-        if (parsed != null && parsed > 0) ndxQqqRatio = parsed;
-        raw = raw.substring(rEnd + 1);
       }
     }
 
@@ -1016,18 +853,16 @@ public class TLADeGexDashboard extends Study
   private double convertPrice(double esPrice)
   {
     String t = getSettings().getString(DISPLAY_TICKER, "ES").toUpperCase(Locale.ROOT);
-    // No built-in spread: the S: of the data string wins; without it the strikes stay in futures
-    // points (identity) instead of being shifted by a stale number.
-    boolean nqFamily = t.equals("NQ") || t.equals("NDX") || t.equals("QQQ");
-    double esSpx = (!nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(ES_SPX_SPREAD, 0.0);
-    double nqNdx = (nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(NQ_NDX_SPREAD, 0.0);
-    double ratio = (!Double.isNaN(ndxQqqRatio) && ndxQqqRatio > 0) ? ndxQqqRatio : 40.0;
+    double esSpx = !Double.isNaN(spreadOverride)
+        ? spreadOverride
+        : getSettings().getDouble(ES_SPX_SPREAD, 24.0);
+    double nqNdx = getSettings().getDouble(NQ_NDX_SPREAD, 40.0);
     switch (t) {
-      case "SPX": return esSpx <= 0 ? esPrice : esPrice - esSpx;
-      case "SPY": return esSpx <= 0 ? esPrice : (esPrice - esSpx) / 10.0;
+      case "SPX": return esPrice - esSpx;
+      case "SPY": return (esPrice - esSpx) / 10.0;
       case "NQ":  return esPrice;
-      case "NDX": return nqNdx <= 0 ? esPrice : esPrice - nqNdx;
-      case "QQQ": return nqNdx <= 0 ? esPrice : (esPrice - nqNdx) / ratio;
+      case "NDX": return esPrice - nqNdx;
+      case "QQQ": return (esPrice - nqNdx) / 40.0;
       default:    return esPrice; // ES
     }
   }
@@ -1087,214 +922,79 @@ public class TLADeGexDashboard extends Study
     java.util.List<double[]> out = new java.util.ArrayList<>();
     java.time.ZoneId etZone = java.time.ZoneId.of("America/New_York");
     boolean has = false; long curSlot = Long.MIN_VALUE;
-    double curO = 0, curH = 0, curL = 0, curC = 0;
+    double curH = 0, curL = 0, curC = 0;
     final long anchor = 18L * 60L; // 18:00 ET
     for (int i = 0; i < barCount; i++) {
       long t = series.getStartTime(i);
       java.time.ZonedDateTime et = java.time.Instant.ofEpochMilli(t).atZone(etZone);
       long etMin = et.toLocalDate().toEpochDay() * 1440L + et.getHour() * 60L + et.getMinute();
       long slot = Math.floorDiv(etMin - anchor, periodMinutes) * periodMinutes + anchor;
-      double o = series.getOpen(i), h = series.getHigh(i), l = series.getLow(i), c = series.getClose(i);
+      double h = series.getHigh(i), l = series.getLow(i), c = series.getClose(i);
       if (!has || slot != curSlot) {
-        if (has) out.add(new double[] { curO, curH, curL, curC });
-        has = true; curSlot = slot; curO = o; curH = h; curL = l; curC = c;
+        if (has) out.add(new double[] { curH, curL, curC });
+        has = true; curSlot = slot; curH = h; curL = l; curC = c;
       } else {
         if (h > curH) curH = h;
         if (l < curL) curL = l;
         curC = c;
       }
     }
-    if (has) out.add(new double[] { curO, curH, curL, curC });
+    if (has) out.add(new double[] { curH, curL, curC });
     return out;
   }
 
   private static boolean isQualityBreakout(double[] curr, double[] prev, boolean bull)
   {
-    // arr = {open, high, low, close}
+    // arr = {high, low, close}
     if (bull) {
-      if (curr[3] <= prev[1]) return false;
-      double bodyAbove = curr[3] - prev[1], upperShadow = curr[1] - curr[3];
+      if (curr[2] <= prev[0]) return false;
+      double bodyAbove = curr[2] - prev[0], upperShadow = curr[0] - curr[2];
       return bodyAbove > upperShadow && bodyAbove > 0;
     } else {
-      if (curr[3] >= prev[2]) return false;
-      double bodyBelow = prev[2] - curr[3], lowerShadow = curr[3] - curr[2];
+      if (curr[2] >= prev[1]) return false;
+      double bodyBelow = prev[1] - curr[2], lowerShadow = curr[2] - curr[1];
       return bodyBelow > lowerShadow && bodyBelow > 0;
     }
   }
 
-  // Breakouts of one timeframe, CLOSED bars only (the last element is the bar in progress). A
-  // breakout dies when a later bar of the SAME timeframe, in the opposite direction, closes back
-  // through its level — a long BO H1 lives until a bearish H1 bar closes below it. Of the survivors,
-  // the last `keep` per timeframe are returned. out entries: {price, bull ? 1 : 0}
-  private void detectBosInto(java.util.List<double[]> c, java.util.List<double[]> out, int keep)
+  // out entries: {price, bull ? 1 : 0}
+  private void detectBosInto(java.util.List<double[]> c, java.util.List<double[]> out)
   {
-    int lastClosed = c.size() - 2;
-    if (lastClosed < 1) return;
-    java.util.List<double[]> alive = new java.util.ArrayList<>();
-    for (int i = 1; i <= lastClosed; i++) {
-      double[] curr = c.get(i), prev = c.get(i - 1);
-      if (isQualityBreakout(curr, prev, true)) {
-        boolean killed = false;
-        for (int j = i + 1; j <= lastClosed; j++) { double[] b = c.get(j); if (b[3] < prev[1] && b[3] < b[0]) { killed = true; break; } }
-        if (!killed) alive.add(new double[] { prev[1], 1 });
+    if (c.size() < 3) return;
+    boolean foundBull = false, foundBear = false;
+    for (int i = c.size() - 2; i >= 2 && (!foundBull || !foundBear); i--) {
+      double[] curr = c.get(i); double[] prev = c.get(i - 1);
+      if (!foundBull && isQualityBreakout(curr, prev, true)) {
+        boolean valid = true;
+        for (int j = i + 1; j < c.size(); j++) if (c.get(j)[2] < prev[0]) { valid = false; break; }
+        if (valid) { out.add(new double[] { prev[0], 1 }); foundBull = true; }
       }
-      if (isQualityBreakout(curr, prev, false)) {
-        boolean killed = false;
-        for (int j = i + 1; j <= lastClosed; j++) { double[] b = c.get(j); if (b[3] > prev[2] && b[3] > b[0]) { killed = true; break; } }
-        if (!killed) alive.add(new double[] { prev[2], 0 });
+      if (!foundBear && isQualityBreakout(curr, prev, false)) {
+        boolean valid = true;
+        for (int j = i + 1; j < c.size(); j++) if (c.get(j)[2] > prev[1]) { valid = false; break; }
+        if (valid) { out.add(new double[] { prev[1], 0 }); foundBear = true; }
       }
     }
-    int from = Math.max(0, alive.size() - Math.max(1, keep));
-    for (int i = from; i < alive.size(); i++) out.add(alive.get(i));
   }
 
-  private static String boLabel(boolean bull, String tf)
-  {
-    char t = bull ? '\u25B2' : '\u25BC';
-    int n = tf.equals("M") ? 5 : tf.equals("W") ? 4 : tf.equals("D") ? 3 : tf.equals("H4") ? 2 : 1;
-    StringBuilder sb = new StringBuilder();
-    for (int i = 0; i < n; i++) sb.append(t);
-    return sb + " BO " + (bull ? "L" : "S") + " " + tf;
-  }
-
-  // futures day (18:00 ET boundary) of a bar, as an epoch day
-  private static long futuresDay(long timeMs)
-  {
-    java.time.ZonedDateTime et = java.time.Instant.ofEpochMilli(timeMs).atZone(java.time.ZoneId.of("America/New_York"));
-    java.time.LocalDate fd = (et.getHour() >= 18) ? et.toLocalDate().plusDays(1) : et.toLocalDate();
-    return fd.toEpochDay();
-  }
-
-  // chart bars -> one {O,H,L,C} per calendar key of the futures day (week = its Monday, month = its 1st)
-  private java.util.List<double[]> aggregateByKey(DataSeries series, int barCount, boolean monthly)
-  {
-    java.util.List<double[]> out = new java.util.ArrayList<>();
-    boolean has = false; long curKey = Long.MIN_VALUE;
-    double cO = 0, cH = 0, cL = 0, cC = 0;
-    for (int i = 0; i < barCount; i++) {
-      java.time.LocalDate fd = java.time.LocalDate.ofEpochDay(futuresDay(series.getStartTime(i)));
-      long key = monthly ? (fd.getYear() * 12L + fd.getMonthValue()) : fd.minusDays((fd.getDayOfWeek().getValue() + 6) % 7).toEpochDay();
-      double o = series.getOpen(i), h = series.getHigh(i), l = series.getLow(i), c = series.getClose(i);
-      if (!has || key != curKey) {
-        if (has) out.add(new double[] { cO, cH, cL, cC });
-        has = true; curKey = key; cO = o; cH = h; cL = l; cC = c;
-      } else {
-        if (h > cH) cH = h;
-        if (l < cL) cL = l;
-        cC = c;
-      }
-    }
-    if (has) out.add(new double[] { cO, cH, cL, cC });
-    return out;
-  }
-
-  // returns {price, label, bull, tf} per live breakout
+  // returns {price, label, bull} per detected BOS
   private java.util.List<Object[]> computeLocalBOS(DataSeries series)
   {
     java.util.List<Object[]> out = new java.util.ArrayList<>();
     if (series == null) return out;
     int n = series.size();
     if (n < 3) return out;
-    int keep = getSettings().getInteger(BOS_KEEP, 2);
-    String[] tfs = { "M", "W", "D", "H4", "H1" };
-    boolean[] on = { getSettings().getBoolean(SHOW_BOS_M, false), getSettings().getBoolean(SHOW_BOS_W, false),
-                     getSettings().getBoolean(SHOW_BOS_D, true), getSettings().getBoolean(SHOW_BOS_H4, true), getSettings().getBoolean(SHOW_BOS_H1, true) };
-    for (int k = 0; k < tfs.length; k++) {
-      if (!on[k]) continue;
-      java.util.List<double[]> bars =
-          tfs[k].equals("M") ? aggregateByKey(series, n, true) :
-          tfs[k].equals("W") ? aggregateByKey(series, n, false) :
-          aggregateByEtPeriod(series, n, tfs[k].equals("D") ? 1440 : tfs[k].equals("H4") ? 240 : 60);
+    String[] tfs = { "H4", "H1" };
+    int[] periods = { 240, 60 };
+    for (int k = 0; k < 2; k++) {
       java.util.List<double[]> found = new java.util.ArrayList<>();
-      detectBosInto(bars, found, keep);
+      detectBosInto(aggregateByEtPeriod(series, n, periods[k]), found);
       for (double[] f : found) {
         boolean bull = f[1] > 0.5;
-        out.add(new Object[] { f[0], boLabel(bull, tfs[k]), bull, tfs[k] });
+        out.add(new Object[] { f[0], "BOS " + tfs[k] + (bull ? " L" : " S"), bull });
       }
     }
     return out;
-  }
-
-  /** Chart-display price back into futures space (the strikes' space). */
-  private double toFuturesSpace(double displayPrice)
-  {
-    String t = getSettings().getString(DISPLAY_TICKER, "ES").toUpperCase(Locale.ROOT);
-    boolean nqFamily = t.equals("NQ") || t.equals("NDX") || t.equals("QQQ");
-    double esSpx = (!nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(ES_SPX_SPREAD, 0.0);
-    double nqNdx = (nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(NQ_NDX_SPREAD, 0.0);
-    double ratio = (!Double.isNaN(ndxQqqRatio) && ndxQqqRatio > 0) ? ndxQqqRatio : 40.0;
-    switch (t) {
-      case "SPX": return esSpx <= 0 ? displayPrice : displayPrice + esSpx;
-      case "SPY": return esSpx <= 0 ? displayPrice : displayPrice * 10.0 + esSpx;
-      case "NDX": return nqNdx <= 0 ? displayPrice : displayPrice + nqNdx;
-      case "QQQ": return nqNdx <= 0 ? displayPrice : displayPrice * ratio + nqNdx;
-      default:    return displayPrice;
-    }
-  }
-
-  /** One name per level code, the same words on every platform. */
-  private static String levelName(String code, String feedLabel)
-  {
-    switch (code) {
-      case "CW": return "Call Wall";
-      case "PW": return "Put Wall";
-      case "GL": return "GEX Level";
-      case "ZG": return "Zero Gamma";
-      case "MP": return "Max Pain";
-      case "EH": return "EM High Globex";
-      case "EL": return "EM Low Globex";
-      case "EHR": return "EM High RTH";
-      case "ELR": return "EM Low RTH";
-      case "VH": return "Vol High";
-      case "VL": return "Vol Low";
-      case "CM": return "Charm Magnet";
-      case "DF": return "Delta Flip";
-      case "PDH": return "Previous Day High";
-      case "PDL": return "Previous Day Low";
-      case "PWH": return "Previous Week High";
-      case "PWL": return "Previous Week Low";
-      default: return feedLabel == null ? code : feedLabel;
-    }
-  }
-
-  /** The chart is an intraday tool: above 1H it draws nothing unless asked. */
-  private boolean tfActive(DataContext ctx)
-  {
-    if (getSettings().getBoolean(SHOW_ABOVE_H1, false)) return true;
-    try {
-      com.motivewave.platform.sdk.common.BarSize bs = ctx.getChartBarSize();
-      if (bs == null) return true;
-      int mins = bs.getIntervalMinutes();
-      return mins <= 60;
-    } catch (Exception e) { return true; }
-  }
-
-  // Wall flip, the TradingView rule: two consecutive 5-minute closes beyond the strike flip the
-  // wall, two the other way restore it. Replayed over the 5-minute series on every calc, so the
-  // state is deterministic and the same on a 1-minute or hourly chart.
-  private void computeWallFlips(DataContext ctx)
-  {
-    wallFlipped.clear();
-    java.util.List<LevelEntry> walls = new java.util.ArrayList<>();
-    for (LevelEntry l : levels) if (l.type.equals("CW") || l.type.equals("PW")) walls.add(l);
-    if (walls.isEmpty()) return;
-    DataSeries s5 = null;
-    try { s5 = ctx.getDataSeries(com.motivewave.platform.sdk.common.BarSize.getBarSize(5)); } catch (Exception e) { s5 = null; }
-    if (s5 == null || s5.size() < 2) return;
-    int n = walls.size();
-    int[] cnt = new int[n]; boolean[] flipped = new boolean[n];
-    int last = s5.size() - 2;   // the last bar is still forming
-    for (int i = Math.max(0, last - 2000); i <= last; i++) {
-      double c = toFuturesSpace(s5.getClose(i));
-      for (int w = 0; w < n; w++) {
-        double k = walls.get(w).esStrike;
-        boolean cw = walls.get(w).type.equals("CW");
-        boolean beyond = cw ? (flipped[w] ? c < k : c > k) : (flipped[w] ? c > k : c < k);
-        if (beyond) { cnt[w]++; if (cnt[w] >= 2) { flipped[w] = !flipped[w]; cnt[w] = 0; } }
-        else cnt[w] = 0;
-      }
-    }
-    for (int w = 0; w < n; w++) wallFlipped.put(walls.get(w).esStrike, flipped[w]);
   }
 
   private String formatPrice(double esPrice)
@@ -1316,7 +1016,7 @@ public class TLADeGexDashboard extends Study
   private static boolean isSystem(String t)
   {
     return t.equals("ZG") || t.equals("MP") || t.equals("EH") || t.equals("EL")
-        || t.equals("EHR") || t.equals("ELR") || t.equals("VH") || t.equals("VL");
+        || t.equals("VH") || t.equals("VL");
   }
   private static boolean isStructure(String t)
   {
@@ -1327,12 +1027,6 @@ public class TLADeGexDashboard extends Study
   // CM = Charm Magnet (strike where charm flow magnetises price).
   private static boolean isBreakout(String t) { return t.equals("BL") || t.equals("BS"); }
   private static boolean isCharmMagnet(String t) { return t.equals("CM"); }
-  private static boolean isDeltaFlip(String t) { return t.equals("DF"); }
-  // The TradingView palette, so the two charts read the same
-  private static final Color C_ZG = new Color(0x9c, 0xa3, 0xaf), C_MP = new Color(0xef, 0x44, 0x44),
-      C_EM = new Color(0x3b, 0x82, 0xf6), C_VB = new Color(0x9c, 0xa3, 0xaf), C_STRUCT = new Color(0x9c, 0xa3, 0xaf),
-      C_CHARM = new Color(0xf9, 0x73, 0x16), C_DFLIP = new Color(0xf5, 0x9e, 0x0b),
-      C_BO_BULL = new Color(0x22, 0xc5, 0x5e), C_BO_BEAR = new Color(0xef, 0x44, 0x44);
 
   private static boolean nearlyEqual(double a, double b)
   {
@@ -1472,13 +1166,13 @@ public class TLADeGexDashboard extends Study
     int width = getSettings().getInteger(AVWAP_LINE_WIDTH, 2);
 
     if (getSettings().getBoolean(SHOW_AVWAP_ASIA, true))
-      drawOneAvwap(gc, ctx, b, times, aA, clipFrom, new Color(0xF5, 0x9E, 0x0B), "AVWAP Asia", width);
+      drawOneAvwap(gc, ctx, b, times, aA, clipFrom, new Color(0xF5, 0x9E, 0x0B), "Asia", width);
     if (getSettings().getBoolean(SHOW_AVWAP_EU, true))
-      drawOneAvwap(gc, ctx, b, times, aE, clipFrom, new Color(0x3B, 0x82, 0xF6), "AVWAP EU", width);
+      drawOneAvwap(gc, ctx, b, times, aE, clipFrom, new Color(0x3B, 0x82, 0xF6), "EU", width);
     if (getSettings().getBoolean(SHOW_AVWAP_US, true))
-      drawOneAvwap(gc, ctx, b, times, aU, clipFrom, new Color(0x22, 0xC5, 0x5E), "AVWAP US", width);
+      drawOneAvwap(gc, ctx, b, times, aU, clipFrom, new Color(0x22, 0xC5, 0x5E), "US", width);
     if (getSettings().getBoolean(SHOW_AVWAP_PD, true))
-      drawOneAvwap(gc, ctx, b, times, aP, clipFrom, new Color(0x6E, 0xE7, 0xB7), "AVWAP US Prev Day", width);
+      drawOneAvwap(gc, ctx, b, times, aP, clipFrom, new Color(0x6E, 0xE7, 0xB7), "PD", width);
   }
 
   private void drawOneAvwap(Graphics2D gc, DrawContext ctx, Rectangle b,
@@ -1490,7 +1184,6 @@ public class TLADeGexDashboard extends Study
     gc.setStroke(new BasicStroke(width));
     int prevX = Integer.MIN_VALUE, prevY = Integer.MIN_VALUE;
     int lastValidX = Integer.MIN_VALUE, lastValidY = Integer.MIN_VALUE;
-    double lastValidValue = Double.NaN;
     boolean haveLast = false;
 
     for (int i = 0; i < vals.length; i++) {
@@ -1502,7 +1195,7 @@ public class TLADeGexDashboard extends Study
       int y = ctx.translateValue(v);
       if (prevX != Integer.MIN_VALUE) gc.drawLine(prevX, prevY, x, y);
       prevX = x; prevY = y;
-      lastValidX = x; lastValidY = y; lastValidValue = v;
+      lastValidX = x; lastValidY = y;
       haveLast = true;
     }
 
@@ -1510,7 +1203,7 @@ public class TLADeGexDashboard extends Study
       Font f = new Font("Arial", Font.PLAIN, 11);
       gc.setFont(f);
       FontMetrics fm = gc.getFontMetrics();
-      String txt = " " + String.format(Locale.ROOT, "%.2f", lastValidValue) + " " + label + " ";
+      String txt = " " + label + " ";
       int tw = fm.stringWidth(txt);
       int th = fm.getHeight();
       gc.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 180));
@@ -1655,8 +1348,7 @@ public class TLADeGexDashboard extends Study
       gc.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
       gc.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, RenderingHints.VALUE_TEXT_ANTIALIAS_ON);
 
-      // Confluence zones and profile first (underlay), then level lines/labels on top.
-      paintZones(gc, ctx, b);
+      // Profile first (underlay), then level lines/labels on top.
       if (!drawProfile.isEmpty())
         paintProfile(gc, ctx, b);
 
@@ -1729,23 +1421,6 @@ public class TLADeGexDashboard extends Study
         gc.setRenderingHint(RenderingHints.KEY_TEXT_ANTIALIASING, oldAA);
     }
 
-    private void paintZones(Graphics2D gc, DrawContext ctx, Rectangle b)
-    {
-      List<DrawZone> zones = drawZones;
-      if (zones == null || zones.isEmpty()) return;
-      Font font = labelFont(ctx.getDefaults());
-      gc.setFont(font);
-      FontMetrics fm = gc.getFontMetrics();
-      for (DrawZone z : zones) {
-        int yTop = ctx.translateValue(z.top), yBot = ctx.translateValue(z.bottom);
-        if (yBot - yTop < 2) { yTop -= 1; yBot += 1; }
-        gc.setColor(z.color);
-        gc.fillRect(b.x, yTop, b.width, yBot - yTop);
-        gc.setColor(new Color(z.color.getRed(), z.color.getGreen(), z.color.getBlue(), 200));
-        gc.drawString(z.label, b.x + 4, (yTop + yBot) / 2 + fm.getAscent() / 2);
-      }
-    }
-
     private void paintLevels(Graphics2D gc, DrawContext ctx, Rectangle b)
     {
       Font font = labelFont(ctx.getDefaults());
@@ -1756,7 +1431,7 @@ public class TLADeGexDashboard extends Study
         int yPix = ctx.translateValue(d.price);
         if (yPix < b.y - 2 || yPix > b.y + b.height + 2) continue; // off-screen
 
-        gc.setStroke(strokeFor(d.style, d.lineWidth));
+        gc.setStroke(strokeFor(d.gex, d.sys, d.lineWidth));
         gc.setColor(d.color);
         gc.drawLine(b.x, yPix, b.x + b.width, yPix);
 
@@ -1823,47 +1498,37 @@ public class TLADeGexDashboard extends Study
   private Color colorFor(LevelEntry lvl, double y, double spot)
   {
     switch (lvl.type) {
-      // colour = NATURE: a Call Wall stays the call colour whatever its role (flip = thinner + ↺)
-      case "CW": return negColor;
-      case "PW": return posColor;
-      case "ZG": return C_ZG;
-      case "MP": return C_MP;
-      case "EH": case "EL": case "EHR": case "ELR": return C_EM;
-      case "VH": case "VL": return C_VB;
-      case "CM": return C_CHARM;
-      case "DF": return C_DFLIP;
-      case "BL": return C_BO_BULL;
-      case "BS": return C_BO_BEAR;
-      default: return C_STRUCT;
+      case "CW": {
+        boolean flipped = y < spot;
+        return flipped ? posColor : negColor;
+      }
+      case "PW": {
+        boolean flipped = y > spot;
+        return flipped ? negColor : posColor;
+      }
+      case "ZG": return new Color(0xA9, 0xA9, 0xA9); // DarkGray (#A9A9A9, matches NT8 Brushes.DarkGray)
+      case "MP": return new Color(0xff, 0x00, 0x00); // Red
+      case "EH":
+      case "EL": return new Color(0x1e, 0x90, 0xff); // DodgerBlue
+      case "VH":
+      case "VL": return new Color(0x80, 0x80, 0x80); // Gray
+      // v1.3 — Breakout / Charm Magnet (palettes chosen distinct from CW/PW)
+      case "BL": return new Color(0x10, 0xB9, 0x81); // emerald — Breakout Long
+      case "BS": return new Color(0xF4, 0x3F, 0x5E); // rose    — Breakout Short
+      case "CM": return new Color(0xC0, 0x73, 0xFF); // violet  — Charm Magnet
+      default:
+        if (isStructure(lvl.type)) return new Color(0xA9, 0xA9, 0xA9); // DarkGray (#A9A9A9, matches NT8 Brushes.DarkGray)
+        return new Color(0x80, 0x80, 0x80); // Gray
     }
   }
 
-
-  private static Stroke strokeFor(int style, int width)
+  private static Stroke strokeFor(boolean gex, boolean sys, int width)
   {
-    if (style == 0) return new BasicStroke(width); // solid
-    if (style == 1) return new BasicStroke(width, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
-        10f, new float[] {6f, 4f}, 0f); // dashed
+    if (gex) return new BasicStroke(width); // solid
+    if (sys) return new BasicStroke(width, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER,
+        10f, new float[] {6f, 4f}, 0f); // dash
     return new BasicStroke(width, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND,
-        10f, new float[] {1f, 4f}, 0f); // dotted
-  }
-
-  private int userLineStyle()
-  {
-    String st = getSettings().getString(LINE_STYLE, "Dotted");
-    return st.equalsIgnoreCase("Solid") ? 0 : st.equalsIgnoreCase("Dashed") ? 1 : 2;
-  }
-
-  // Line styles as the TradingView indicator: walls and Zero Gamma in the user's style, Max Pain /
-  // Vol Bands / Structure dotted, EM and Delta Flip dashed, Charm Magnet solid.
-  private int styleFor(String type)
-  {
-    switch (type) {
-      case "CM": return 0;
-      case "MP": case "VH": case "VL": case "PDH": case "PDL": case "PWH": case "PWL": return 2;
-      case "EH": case "EL": case "EHR": case "ELR": case "DF": return 1;
-      default: return userLineStyle();
-    }
+        10f, new float[] {1f, 4f}, 0f); // dot
   }
 
   private Font labelFont(Defaults defaults)

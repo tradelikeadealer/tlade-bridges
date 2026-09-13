@@ -253,3 +253,17 @@ Initial port of `TLADeGexDashboardNT` (NinjaTrader 8) to MotiveWave.
 - Profile histogram + chip labels + diagnostic status box
 
 Credit: **Herat Acharya** — community contribution, June 2026.
+
+## 2026-09-13 — release 3.5.0: the canonical set
+
+Rebuilt to the same feature set as the TradingView ES indicator and NinjaTrader 8 (see the
+`indicators-pre-3.5` release for the previous jar):
+
+- One name per level ("7466 Put Wall", "7688 Zero Gamma", "7646 EM High Globex"), "↺" on a flipped wall.
+- Wall flip on two consecutive 5-minute closes (secondary 5-minute series), colour = nature, thinner line.
+- Breakouts M/W/D/4H/1H on closed bars, invalidated by an opposite bar of the same timeframe closing
+  through, "Keep last N per timeframe" (2), labels "▲ BO L H1 7650.25".
+- Confluence zones sized on the EM range (7% = ±3.5%), Delta Flip, EM High/Low RTH (EHR/ELR),
+  TradingView palette and line styles, silent above 1H, level-cross signals (Study → Signals).
+- No built-in spread: S: from the data string or identity; R: ratio for QQQ.
+- Defaults: Structure, Charm Magnet, Breakouts, Confluence off; Delta Flip, Profile, AVWAP on.
