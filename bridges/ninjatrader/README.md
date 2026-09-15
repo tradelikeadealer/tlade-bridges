@@ -92,9 +92,16 @@ both instances post to the same `/push_spot` endpoint, so the receiver keeps
 only the latest tick and the second instance looks idle by comparison.
 
 You only need the indicator loaded on **one chart per ticker** (one for ES,
-one for NQ). The timeframe of that NT8 chart (1m, 5m, tick…) doesn't affect
-what TLADe receives — multi-timeframe analysis happens inside the TLADe
-terminal itself via the built-in 5m / 15m / 30m / H1 / H4 switcher.
+one for NQ), and that chart **must be a 5-minute chart**: the indicator pushes
+the bars of the chart it sits on, and the terminal expects 5-minute bars
+(Bridge Protocol §ib_data). On a 1-minute or tick chart the terminal reads the
+bars at the wrong scale — session engines drift and the chart re-fits on every
+update. Trade on any other timeframe in other chart windows; the multi-timeframe
+view inside the terminal (5m / 15m / 30m / H1 / H4) is built from the 5-minute feed.
+
+Start order matters: run the receiver first, then load (or reload) the indicator.
+The 500-bar history is pushed when the indicator loads; restarting the receiver
+afterwards discards it, and the terminal starts with only the bars since.
 
 ### The bridge runs, but TLADe never switches to live data (Chrome)
 
