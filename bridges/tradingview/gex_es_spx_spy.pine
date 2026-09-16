@@ -103,7 +103,11 @@ colorVolBand = input.color(#9ca3af, "Vol Bands", group=groupCol, inline="sys2")
 colorStructure = input.color(#9ca3af, "Structure", group=groupCol)
 colorCharm = input.color(#f97316, "Charm Magnet", group=groupCol)
 colorDeltaFlip = input.color(#f59e0b, "Delta Flip", group=groupCol)
-lineLeftExt = input.int(50, "Line Left Extension", minval=1, group=groupCol)
+lineLeftExt = input.int(50, "Line Left Extension", minval=1, group=groupCol, tooltip="Bars to the left of the current bar where lines and labels start (Label Side = Left). Ignored when Left Anchor = Day start.")
+leftAnchorMode = input.string("Bars back", "Left Anchor", options=["Bars back", "Day start"], group=groupCol, tooltip="Bars back: labels sit N bars left of the current bar and walk right as bars form (you keep raising the extension during the day). Day start: labels stay at the first bar of the futures day (18:00 ET) — set once, forget it.")
+lineExtendInput = input.string("Auto", "Line Extension", options=["Auto", "None", "Right", "Both"], group=groupCol, tooltip="Auto: label on the Left -> the line runs only from the label to the GEX profile bars (the original drawing, until June 2026); label on the Right -> across the whole chart, so the label stays connected to its line. None / Right / Both force it.")
+labelTranspWalls = input.int(0, "Label Transparency — Walls", minval=0, maxval=90, group=groupCol, inline="lt", tooltip="Call/Put Wall label boxes. 0 = solid (historical default).")
+labelTranspSys = input.int(0, "System", minval=0, maxval=90, group=groupCol, inline="lt", tooltip="Zero Gamma, Max Pain, EM, Vol Bands, Structure label boxes. Raise the walls, keep these solid, and ZG stays readable under a wall.")
 lineStyleInput = input.string("Dotted", "Line Style", options=["Solid", "Dashed", "Dotted"], group=groupCol)
 lineWidth = input.int(2, "Line Width", minval=1, maxval=4, group=groupCol)
 labelSide = input.string("Left", "Label Side", options=["Left", "Right"], group=groupCol, tooltip="Where level labels render. Right places them clear of both candles and the GEX profile bars (recommended on busy charts).")
@@ -687,9 +691,18 @@ var label avwapLblEU   = na
 var label avwapLblUS   = na
 var label avwapLblPD   = na
 
+// Left anchor (16/9/2026). "Day start" = bar_index of the first bar at/after 18:00 ET of the futures
+// day: fixed in time, so labels and line starts do not walk right as the session builds bars.
+var int dayStartBar = na
+int etHourNow = hour(time, "America/New_York")
+int etHourPrev = hour(nz(time[1], time), "America/New_York")
+if na(dayStartBar) or (etHourNow >= 18 and etHourPrev < 18)
+    dayStartBar := bar_index
+int leftAnchorX = leftAnchorMode == "Day start" and not na(dayStartBar) ? dayStartBar : bar_index - lineLeftExt
+
 f_avwapLabel(label lbl, float y, string name, color clr) =>
     label out = lbl
-    int x = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : bar_index - lineLeftExt
+    int x = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : leftAnchorX
     string txt = str.tostring(y, format.mintick) + " " + name
     if na(out)
         out := label.new(x, y, txt, style=label.style_label_left, size=size.small, textcolor=color.white, color=clr)
@@ -712,7 +725,7 @@ if showAVWAP and showAvwapLabels and barstate.islast
 // ║  GEX LEVELS + PROFILE (last bar only — same logic as GEX Dashboard v6.8)     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-string stateKey = gexDataActive + str.tostring(confluenceEmPct) + str.tostring(profileWidth) + str.tostring(barThickness) + str.tostring(profileOffset) + colorScheme + barColorStyle + lineStyleInput + str.tostring(lineWidth) + str.tostring(lineLeftExt) + tickerChoice
+string stateKey = gexDataActive + str.tostring(confluenceEmPct) + str.tostring(profileWidth) + str.tostring(barThickness) + str.tostring(profileOffset) + colorScheme + barColorStyle + lineStyleInput + str.tostring(lineWidth) + str.tostring(lineLeftExt) + lineExtendInput + str.tostring(labelTranspWalls) + str.tostring(labelTranspSys) + leftAnchorMode + tickerChoice
 bool needsRedraw = barstate.islast and (stateKey != prevState or bar_index != lastBarIdx or not tfActive)
 
 if needsRedraw
@@ -881,14 +894,14 @@ if needsRedraw
                         // "weakened in its current role". The user's chosen lineWidth
                         // remains the baseline for non-flipped walls.
                         int useWidth = isWallFlipped ? math.max(lineWidth - 1, 1) : lineWidth
-                        array.push(gexLines, line.new(bar_index - lineLeftExt, cv, bar_index + profileOffset, cv, color=lvlColor, style=ls, width=useWidth, extend=extend.both))
+                        array.push(gexLines, line.new(leftAnchorX, cv, bar_index + profileOffset, cv, color=lvlColor, style=ls, width=useWidth, extend=lineExtendInput == "None" ? extend.none : lineExtendInput == "Right" ? extend.right : lineExtendInput == "Both" ? extend.both : (labelSide == "Right" ? extend.both : extend.none)))
                         string flipSuffix = isWallFlipped ? " ↺" : ""
                         string dLabel = f_formatPrice(lvlStrike) + " " + f_levelName(lvlType, lvlLabel) + flipSuffix
                         // Label anchor: "Left" keeps the historical placement (= clear of
                         // candles thanks to lineLeftExt). "Right" places the label past the
                         // GEX profile bars so it overlaps neither candles nor profile.
-                        int lblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : bar_index - lineLeftExt
-                        array.push(gexLabels, label.new(lblX, cv, dLabel, color=lvlColor, style=label.style_label_left, textcolor=color.white, size=size.small, tooltip=finalTT))
+                        int lblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : leftAnchorX
+                        array.push(gexLabels, label.new(lblX, cv, dLabel, color=color.new(lvlColor, isGex ? labelTranspWalls : labelTranspSys), style=label.style_label_left, textcolor=color.white, size=size.small, tooltip=finalTT))
                         if isGex or isSys
                             array.push(alertPrices, cv)
                             array.push(alertNames, dLabel)
@@ -905,9 +918,9 @@ if needsRedraw
         for pi = 0 to 3
             float paPrice = array.get(paPrices, pi)
             if not na(paPrice)
-                array.push(gexLines, line.new(bar_index - lineLeftExt, paPrice, bar_index + profileOffset, paPrice, color=colorStructure, style=line.style_dotted, width=lineWidth, extend=extend.both))
-                int paLblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : bar_index - lineLeftExt
-                array.push(gexLabels, label.new(paLblX, paPrice, str.tostring(paPrice, format.mintick) + " " + array.get(paNames, pi), color=colorStructure, style=label.style_label_left, textcolor=color.white, size=size.small))
+                array.push(gexLines, line.new(leftAnchorX, paPrice, bar_index + profileOffset, paPrice, color=colorStructure, style=line.style_dotted, width=lineWidth, extend=lineExtendInput == "None" ? extend.none : lineExtendInput == "Right" ? extend.right : lineExtendInput == "Both" ? extend.both : (labelSide == "Right" ? extend.both : extend.none)))
+                int paLblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : leftAnchorX
+                array.push(gexLabels, label.new(paLblX, paPrice, str.tostring(paPrice, format.mintick) + " " + array.get(paNames, pi), color=color.new(colorStructure, labelTranspSys), style=label.style_label_left, textcolor=color.white, size=size.small))
 
     // ── Draw Profile Bars ──
     if showProfile and profileData != ""
@@ -1042,7 +1055,7 @@ if needsRedraw
                 if size >= confluenceMinSize
                     int scoreCapped = math.min(size, 5)
                     color boxColor = scoreCapped >= 5 ? colorConfluence5 : scoreCapped >= 4 ? colorConfluence4 : colorConfluence3
-                    array.push(confluenceBoxes, box.new(bar_index - lineLeftExt, clusterMax, bar_index + profileOffset, clusterMin, border_color=color.new(boxColor, 50), border_width=1, bgcolor=boxColor))
+                    array.push(confluenceBoxes, box.new(leftAnchorX, clusterMax, bar_index + profileOffset, clusterMin, border_color=color.new(boxColor, 50), border_width=1, bgcolor=boxColor))
                     string txt = scoreCapped >= 5 ? "UBER" : str.tostring(scoreCapped) + "x"
                     string tt = "Confluence " + str.tostring(size) + " levels:\n" + array.join(clusterItems, "\n")
                     array.push(confluenceLabels, label.new(bar_index + profileOffset, (clusterMax + clusterMin) / 2, txt, color=color.new(boxColor, 20), textcolor=color.white, style=label.style_label_left, size=size.small, tooltip=tt))
