@@ -286,3 +286,11 @@ Rebuilt to the same feature set as the TradingView ES indicator and NinjaTrader 
   TradingView palette and line styles, silent above 1H, level-cross signals (Study → Signals).
 - No built-in spread: S: from the data string or identity; R: ratio for QQQ.
 - Defaults: Structure, Charm Magnet, Breakouts, Confluence off; Delta Flip, Profile, AVWAP on.
+
+## 2026-09-18 — 3.5.1: same study, Java 25 bytecode
+
+The 3.5.0 jar was compiled for Java 26 (class file 70). The Windows build of MotiveWave 7.1 ships Java 26
+and loaded it; the macOS build ships Java 25 and silently ignored it — no study in the list, no error,
+no log (reported by a Mac user, 16/9). Rebuilt with `--release 25` (class file 69): identical study,
+loads on Java 25 and 26. No functional change.
+

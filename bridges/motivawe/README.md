@@ -60,7 +60,9 @@ Windows and Linux.
 
 Requires **JDK matching your MotiveWave's Java version** (run
 `cat "<MotiveWave>/jre/release"` to check `JAVA_VERSION`). For
-MotiveWave Java 26:
+MotiveWave Java 26 (compile with `--release 25`: the shipped jar is Java 25 bytecode so it loads on
+both the macOS build of MotiveWave, which ships Java 25, and the Windows build, which ships Java 26 —
+a Java 26 jar is silently ignored on macOS: no study in the list, no error, no log; found 18/9/2026):
 
 ```powershell
 # (Windows) JDK 26 portable, no install needed
@@ -76,7 +78,7 @@ $sdk   = "C:\Program Files (x86)\MotiveWave\lib\mwave_sdk.jar"
 $src   = "C:\path\to\tlade-bridges\bridges\motivawe"
 $build = "$src\build"
 New-Item -ItemType Directory -Force -Path $build | Out-Null
-& $javac -classpath $sdk -d $build "$src\TLADeGexDashboard.java"
+& $javac --release 25 -classpath $sdk -d $build "$src\TLADeGexDashboard.java"
 Push-Location $build; & $jar cf "$build\TLADeGexDashboard.jar" study_examples\*.class; Pop-Location
 
 # Install
@@ -85,7 +87,7 @@ Copy-Item "$build\TLADeGexDashboard.jar" "$env:USERPROFILE\MotiveWave Extensions
 
 ```bash
 # (macOS / Linux) using a system or sdkman-managed JDK matching MW's version
-javac -classpath /Applications/MotiveWave/lib/mwave_sdk.jar -d build TLADeGexDashboard.java
+javac --release 25 -classpath /Applications/MotiveWave/lib/mwave_sdk.jar -d build TLADeGexDashboard.java
 cd build && jar cf TLADeGexDashboard.jar study_examples/*.class
 cp TLADeGexDashboard.jar ~/MotiveWave\ Extensions/
 ```
