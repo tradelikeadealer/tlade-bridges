@@ -23,7 +23,7 @@ showAboveH1 = input.bool(false, "Draw on timeframes above 1H", group=groupTicker
 bool tfActive = showAboveH1 or timeframe.in_seconds() <= 3600
 
 groupGex = "GEX Data"
-string WEEKLY_DATA = input.text_area("S:29.86|R:41.074|L:29189,ZG,ZERO GAMMA,Zero Gamma~Key pivot where dealer gamma flips~Price magnet,0;29330,MP,MAX PAIN,Max Pain~Strike with maximum option pain~Expiry target,0;29323,EH,EM HIGH,Expected Move HIGH~1-sigma upper boundary~Statistical resistance,0;28944,EL,EM LOW,Expected Move LOW~1-sigma lower boundary~Statistical support,0;29230,VH,VOL HIGH,Vol Band HIGH~Volatility-based resistance~ZG + 25% EM,0;29155,VL,VOL LOW,Vol Band LOW~Volatility-based support~ZG - 25% EM,0;29405,DF,Delta Flip,Delta Flip~Where net dealer delta flips sign~Directional pivot,0;29530,CM,Charm Magnet,Charm Magnet (Pressure)~Charm-driven intraday magnet~Pin risk,0;29470,CW,Call Wall,Strike: 29470~From Spot: +0.16%~Tot GEX: 320.55M~C/P Ratio: 78.6~Hold: 71% | Break: 29%,320.5;29530,CW,Call Wall,Strike: 29530~From Spot: +0.37%~Tot GEX: 319.28M~C/P Ratio: 2.2~Hold: 69% | Break: 31%,319.3;29455,CW,Call Wall,Strike: 29455~From Spot: +0.11%~Tot GEX: 160.24M~C/P Ratio: 3.9~Hold: 59% | Break: 41%,160.2;29650,CW,Call Wall,Strike: 29650~From Spot: +0.78%~Tot GEX: 129.24M~Hold: 38% | Break: 62%,129.2;29430,CW,Call Wall,Strike: 29430~From Spot: +0.03%~Tot GEX: 126.57M~C/P Ratio: 1.2~Hold: 56% | Break: 44%,126.6;29480,CW,Call Wall,Strike: 29480~From Spot: +0.20%~Tot GEX: 65.36M~C/P Ratio: 1.5~Hold: 58% | Break: 42%,65.4;29630,CW,Call Wall,Strike: 29630~From Spot: +0.71%~Tot GEX: 58.80M~C/P Ratio: 2.6~Hold: 58% | Break: 42%,58.8;29505,CW,Call Wall,Strike: 29505~From Spot: +0.28%~Tot GEX: 49.80M~C/P Ratio: 12.3~Hold: 66% | Break: 34%,49.8;29590,CW,Call Wall,Strike: 29590~From Spot: +0.57%~Tot GEX: 46.88M~Hold: 55% | Break: 45%,46.9;29580,CW,Call Wall,Strike: 29580~From Spot: +0.54%~Tot GEX: 42.09M~C/P Ratio: 2.9~Hold: 49% | Break: 51%,42.1;29680,CW,Call Wall,Strike: 29680~From Spot: +0.88%~Tot GEX: 38.73M~C/P Ratio: 5.1~Hold: 43% | Break: 57%,38.7;29450,CW,Call Wall,Strike: 29450~From Spot: +0.10%~Tot GEX: 37.63M~C/P Ratio: 6.8~Hold: 66% | Break: 34%,37.6;29540,CW,Call Wall,Strike: 29540~From Spot: +0.40%~Tot GEX: 36.74M~C/P Ratio: 2.1~Hold: 65% | Break: 35%,36.7;29730,CW,Call Wall,Strike: 29730~From Spot: +1.05%~Tot GEX: 31.91M~C/P Ratio: 10.4~Hold: 48% | Break: 52%,31.9;29440,CW,Call Wall,Strike: 29440~From Spot: +0.06%~Tot GEX: 24.93M~C/P Ratio: 9.3~Hold: 47% | Break: 53%,24.9;29230,PW,Put Wall,Strike: 29230~From Spot: -0.65%~Tot GEX: 80.65M~C/P Ratio: 0.1~Hold: 67% | Break: 33%,80.7;29280,PW,Put Wall,Strike: 29280~From Spot: -0.48%~Tot GEX: 62.13M~C/P Ratio: 0.5~Hold: 63% | Break: 37%,62.1;29130,PW,Put Wall,Strike: 29130~From Spot: -0.99%~Tot GEX: 59.51M~C/P Ratio: 0.5~Hold: 53% | Break: 47%,59.5;29180,PW,Put Wall,Strike: 29180~From Spot: -0.82%~Tot GEX: 58.07M~C/P Ratio: 1.0~Hold: 63% | Break: 37%,58.1;29410,PW,Put Wall,Strike: 29410~From Spot: -0.04%~Tot GEX: 51.02M~C/P Ratio: 0.9~Hold: 61% | Break: 39%,51.0;29380,PW,Put Wall,Strike: 29380~From Spot: -0.14%~Tot GEX: 50.12M~C/P Ratio: 0.9~Hold: 58% | Break: 42%,50.1;29205,CW,Call Wall,Strike: 29205~From Spot: -0.74%~Tot GEX: 38.15M~C/P Ratio: 1.6~Hold: 68% | Break: 32%,38.1;29030,PW,Put Wall,Strike: 29030~From Spot: -1.33%~Tot GEX: 27.68M~C/P Ratio: 0.2~Hold: 44% | Break: 56%,27.7;29400,PW,Put Wall,Strike: 29400~From Spot: -0.07%~Tot GEX: 27.30M~C/P Ratio: 0.6~Hold: 67% | Break: 33%,27.3;29405,CW,Call Wall,Strike: 29405~From Spot: -0.06%~Tot GEX: 25.44M~C/P Ratio: 3.4~Hold: 61% | Break: 39%,25.4;29120,CW,Call Wall,Strike: 29120~From Spot: -1.03%~Tot GEX: 24.99M~C/P Ratio: 1.0~Hold: 34% | Break: 66%,25.0;29360,CW,Call Wall,Strike: 29360~From Spot: -0.21%~Tot GEX: 24.18M~C/P Ratio: 4.8~Hold: 66% | Break: 34%,24.2|P:26030,-0.2,-1;26430,-0.1,-1;26530,-0.4,-1;26630,-0.1,-1;26930,-0.1,-1;27030,-0.2,-1;27230,-0.2,-1;27330,-0.1,-1;27530,-0.2,-1;27630,-0.3,-1;27730,-0.4,-1;27780,-0.1,-1;27830,-0.7,-1;27880,-0.2,-1;27930,-0.2,-1;28030,-0.8,-1;28055,-0.2,-1;28080,-1.0,-1;28105,-0.4,-1;28130,-0.4,-1;28155,-0.2,-1;28180,-0.4,-1;28205,-0.5,-1;28230,-1.3,-1;28255,-0.3,-1;28280,-0.7,-1;28330,-0.5,-1;28355,-0.2,-1;28380,-0.1,-1;28430,-0.2,-1;28455,-0.2,-1;28480,-0.2,-1;28530,-0.4,-1;28555,-0.3,-1;28580,-1.0,-1;28590,-0.8,-1;28605,-0.2,-1;28630,-0.4,-1;28660,-0.2,-1;28670,-0.2,-1;28680,-0.3,-1;28700,-0.1,-1;28705,-0.2,-1;28730,-0.2,-1;28755,-0.3,-1;28770,-0.2,-1;28780,-0.3,-1;28805,-0.2,-1;28820,-0.2,-1;28830,-1.1,-1;28850,-0.1,-1;28880,-0.4,-1;28905,-0.1,-1;28930,-0.8,-1;28980,-0.2,-1;29005,-0.3,-1;29010,-0.2,-1;29020,-0.1,-1;29030,-0.6,-1;29040,-0.1,-1;29055,-0.2,-1;29080,-0.1,-1;29100,-0.1,-1;29110,-0.2,-1;29130,-0.6,-1;29140,-0.3,-1;29150,-0.3,-1;29155,-0.7,-1;29160,-0.7,-1;29170,-0.2,-1;29190,0.2,1;29200,0.5,1;29205,0.3,1;29210,-0.3,-1;29220,-0.3,-1;29230,-2.0,-1;29240,0.2,1;29250,0.2,1;29255,-0.2,-1;29260,-0.2,-1;29270,0.4,1;29280,-0.7,-1;29290,0.4,1;29300,0.2,1;29330,-0.6,-1;29340,-0.1,-1;29355,-0.3,-1;29360,0.5,1;29370,0.2,1;29390,0.1,1;29400,-0.2,-1;29405,0.4,1;29410,-0.1,-1;29420,0.6,1;29430,0.3,1;29440,0.6,1;29450,0.9,1;29455,3.0,1;29460,-0.1,-1;29470,10.0,1;29480,0.4,1;29490,0.2,1;29500,0.5,1;29505,1.4,1;29510,0.4,1;29520,0.5,1;29530,3.8,1;29540,0.4,1;29550,0.5,1;29555,0.1,1;29560,-0.1,-1;29570,0.5,1;29580,0.7,1;29590,1.5,1;29600,0.6,1;29605,-0.1,-1;29610,0.3,1;29620,0.2,1;29630,0.8,1;29640,0.3,1;29650,4.1,1;29655,0.4,1;29680,0.8,1;29690,0.5,1;29700,0.1,1;29705,0.4,1;29730,0.8,1;29750,0.1,1;29755,0.3,1;29760,0.1,1;29780,0.2,1;29800,0.2,1;29805,0.5,1;29810,0.2,1;29820,0.1,1;29830,0.7,1;29840,0.2,1;29850,0.3,1;29855,0.3,1;29880,0.3,1;29905,0.3,1;29930,0.4,1;29955,0.2,1;29980,0.3,1;30005,0.1,1;30030,1.3,1;30055,0.3,1;30080,0.2,1;30090,0.6,1;30105,0.5,1;30130,0.7,1;30180,0.1,1;30190,0.5,1;30205,0.2,1;30230,2.1,1;30240,0.1,1;30280,0.1,1;30330,0.5,1;30355,0.2,1;30380,0.3,1;30405,0.3,1;30430,0.2,1;30455,0.1,1;30480,0.1,1;30530,0.7,1;30555,0.1,1;30580,0.1,1;30605,0.1,1;30630,1.1,1;30705,0.1,1;30730,0.2,1;31030,0.5,1;31130,0.7,1")
+string WEEKLY_DATA = input.text_area("S:289.99|R:41.114|L:30743,ZG,ZERO GAMMA,Zero Gamma~Key pivot where dealer gamma flips~Price magnet,0;30490,MP,MAX PAIN,Max Pain~Strike with maximum option pain~Expiry target,0;31058,EH,EM HIGH,Expected Move HIGH~1-sigma upper boundary~Statistical resistance,0;30739,EL,EM LOW,Expected Move LOW~1-sigma lower boundary~Statistical support,0;30790,VH,VOL HIGH,Vol Band HIGH~Upper edge of the balanced gamma field around Zero Gamma~Measured on the chain: cumulative net gamma reaches 1.5% of total,0;30710,VL,VOL LOW,Vol Band LOW~Lower edge of the balanced gamma field around Zero Gamma~Measured on the chain: cumulative net gamma reaches 1.5% of total,0;30540,DF,Delta Flip,Delta Flip~Where net dealer delta flips sign~Directional pivot,0;31140,CM,Charm Magnet,Charm Magnet (Pressure)~Charm-driven intraday magnet~Pin risk,0;30790,PW,Put Wall,Strike: 30790~From Spot: +0.58%~Tot GEX: 329.30M~C/P Ratio: 0.6~Hold: 57% | Break: 43%,329.3;30990,CW,Call Wall,Strike: 30990~From Spot: +1.23%~Tot GEX: 288.96M~C/P Ratio: 10.3~Hold: 56% | Break: 44%,289.0;30690,CW,Call Wall,Strike: 30690~From Spot: +0.25%~Tot GEX: 238.05M~C/P Ratio: 1.1~Hold: 50% | Break: 50%,238.1;30890,CW,Call Wall,Strike: 30890~From Spot: +0.90%~Tot GEX: 219.36M~C/P Ratio: 1.4~Hold: 54% | Break: 46%,219.4;31140,CW,Call Wall,Strike: 31140~From Spot: +1.72%~Tot GEX: 216.45M~C/P Ratio: 187.8~Hold: 55% | Break: 45%,216.4;30940,CW,Call Wall,Strike: 30940~From Spot: +1.07%~Tot GEX: 190.02M~C/P Ratio: 4.2~Hold: 53% | Break: 47%,190.0;30840,PW,Put Wall,Strike: 30840~From Spot: +0.74%~Tot GEX: 166.67M~C/P Ratio: 0.4~Hold: 53% | Break: 47%,166.7;31230,CW,Call Wall,Strike: 31230~From Spot: +2.01%~Tot GEX: 134.51M~Hold: 53% | Break: 47%,134.5;30770,PW,Put Wall,Strike: 30770~From Spot: +0.51%~Tot GEX: 127.81M~C/P Ratio: 1.0~Hold: 53% | Break: 47%,127.8;31090,CW,Call Wall,Strike: 31090~From Spot: +1.56%~Tot GEX: 121.17M~C/P Ratio: 110.1~Hold: 52% | Break: 48%,121.2;31290,CW,Call Wall,Strike: 31290~From Spot: +2.21%~Tot GEX: 103.01M~C/P Ratio: 12.4~Hold: 54% | Break: 46%,103.0;30740,PW,Put Wall,Strike: 30740~From Spot: +0.41%~Tot GEX: 102.41M~C/P Ratio: 0.7~Hold: 50% | Break: 50%,102.4;31190,CW,Call Wall,Strike: 31190~From Spot: +1.88%~Tot GEX: 85.59M~C/P Ratio: 109.3~Hold: 52% | Break: 48%,85.6;30950,CW,Call Wall,Strike: 30950~From Spot: +1.10%~Tot GEX: 85.48M~C/P Ratio: 4.1~Hold: 52% | Break: 48%,85.5;30780,PW,Put Wall,Strike: 30780~From Spot: +0.54%~Tot GEX: 69.70M~C/P Ratio: 0.4~Hold: 52% | Break: 48%,69.7;30590,PW,Put Wall,Strike: 30590~From Spot: -0.08%~Tot GEX: 105.50M~C/P Ratio: 0.3~Hold: 50% | Break: 50%,105.5;30540,CW,Call Wall,Strike: 30540~From Spot: -0.24%~Tot GEX: 80.07M~C/P Ratio: 1.1~Hold: 49% | Break: 51%,80.1;29790,PW,Put Wall,Strike: 29790~From Spot: -2.69%~Tot GEX: 77.07M~C/P Ratio: 0.1~Hold: 49% | Break: 51%,77.1;30440,CW,Call Wall,Strike: 30440~From Spot: -0.57%~Tot GEX: 73.59M~C/P Ratio: 9.1~Hold: 48% | Break: 52%,73.6;30290,PW,Put Wall,Strike: 30290~From Spot: -1.06%~Tot GEX: 59.91M~C/P Ratio: 0.6~Hold: 48% | Break: 52%,59.9;30190,CW,Call Wall,Strike: 30190~From Spot: -1.38%~Tot GEX: 59.08M~C/P Ratio: 2.0~Hold: 48% | Break: 52%,59.1;29890,PW,Put Wall,Strike: 29890~From Spot: -2.36%~Tot GEX: 50.00M~C/P Ratio: 0.2~Hold: 48% | Break: 52%,50.0;30390,PW,Put Wall,Strike: 30390~From Spot: -0.73%~Tot GEX: 49.82M~C/P Ratio: 0.5~Hold: 48% | Break: 52%,49.8;30340,CW,Call Wall,Strike: 30340~From Spot: -0.89%~Tot GEX: 49.28M~C/P Ratio: 6.9~Hold: 48% | Break: 52%,49.3;29690,PW,Put Wall,Strike: 29690~From Spot: -3.02%~Tot GEX: 34.38M~C/P Ratio: 0.3~Hold: 49% | Break: 51%,34.4;30090,PW,Put Wall,Strike: 30090~From Spot: -1.71%~Tot GEX: 27.95M~C/P Ratio: 0.8~Hold: 48% | Break: 52%,27.9;30565,PW,Put Wall,Strike: 30565~From Spot: -0.16%~Tot GEX: 20.12M~C/P Ratio: 0.1~Hold: 48% | Break: 52%,20.1;29990,PW,Put Wall,Strike: 29990~From Spot: -2.04%~Tot GEX: 19.03M~C/P Ratio: 0.4~Hold: 48% | Break: 52%,19.0;29290,PW,Put Wall,Strike: 29290~From Spot: -4.32%~Tot GEX: 17.41M~C/P Ratio: 0.2~Hold: 50% | Break: 50%,17.4;29740,PW,Put Wall,Strike: 29740~From Spot: -2.85%~Tot GEX: 14.92M~C/P Ratio: 0.1~Hold: 48% | Break: 52%,14.9|P:30090,-0.2,-1;30190,0.3,1;30240,-0.1,-1;30265,0.2,1;30290,-0.2,-1;30330,-0.1,-1;30370,-0.3,-1;30390,-0.9,-1;30400,-0.2,-1;30420,-0.4,-1;30430,-0.1,-1;30465,-0.2,-1;30490,-0.6,-1;30510,-0.2,-1;30515,-0.2,-1;30520,-0.1,-1;30540,-0.8,-1;30565,-0.3,-1;30590,-1.4,-1;30600,-0.4,-1;30610,-0.4,-1;30615,-0.2,-1;30620,-0.4,-1;30630,-0.3,-1;30640,-0.2,-1;30650,-0.2,-1;30660,1.0,1;30665,-0.2,-1;30670,-0.3,-1;30680,-0.2,-1;30690,-3.5,-1;30700,-0.2,-1;30710,-0.1,-1;30715,-0.5,-1;30720,-0.3,-1;30730,-0.6,-1;30740,-1.4,-1;30760,-0.5,-1;30765,-0.5,-1;30770,0.7,1;30780,-1.3,-1;30790,-3.2,-1;30800,0.1,1;30810,0.4,1;30815,0.4,1;30820,0.8,1;30830,-0.6,-1;30840,-3.4,-1;30860,0.6,1;30865,0.3,1;30870,-0.8,-1;30890,0.5,1;30900,1.0,1;30910,1.0,1;30915,0.6,1;30920,0.4,1;30940,4.8,1;30950,2.6,1;30960,1.0,1;30965,1.1,1;30970,0.9,1;30980,-0.6,-1;30990,3.2,1;31000,0.9,1;31010,0.7,1;31015,0.9,1;31020,0.1,1;31030,0.5,1;31040,1.3,1;31050,0.6,1;31060,0.5,1;31065,0.7,1;31070,0.1,1;31080,0.8,1;31090,1.4,1;31100,1.0,1;31110,0.3,1;31120,0.9,1;31140,10.0,1;31150,0.7,1;31160,0.5,1;31170,0.6,1;31180,0.7,1;31190,1.6,1;31200,0.5,1;31220,0.6,1;31230,6.9,1;31240,0.2,1;31290,1.2,1;31320,0.2,1;31390,0.3,1;31420,0.1,1;31440,0.2,1;31490,0.1,1")
 gexDataInput = input.text_area("", title="Live GEX Override", group=groupGex, tooltip="Paste live data to override weekly. Leave empty for weekly.")
 string gexDataRaw = gexDataInput != "" ? gexDataInput : WEEKLY_DATA
 // Robustness: iOS copy/paste can URL-encode the string ("|" -> "%7C",
@@ -140,6 +140,14 @@ alertBOS = input.bool(true, "Breakouts", group=groupAlerts, inline="al1")
 // hardcoded default that would silently shift every level.
 f_convertPrice(float nqPrice) =>
     nqNdxSpread <= 0 ? nqPrice : tickerChoice == "NDX" ? nqPrice - nqNdxSpread : tickerChoice == "QQQ" ? (nqPrice - nqNdxSpread) / ndxQqqRatio : nqPrice
+
+// Converts a WIDTH, not a price. f_convertPrice subtracts the spread and then divides. On a
+// distance the spread must NOT be subtracted — it is an offset and cancels between the two
+// ends — while the division still applies. Get it wrong and the band comes out ten times too
+// wide on the ETF proxy. Rule #12: gex_es_spx_spy.pine is the canonical copy; this one differs
+// only in the divisor, which here is dynamic.
+f_convertRange(float w) =>
+    tickerChoice == "QQQ" ? w / ndxQqqRatio : w
 
 f_formatPrice(float nqPrice) =>
     float cv = f_convertPrice(nqPrice)
@@ -481,6 +489,19 @@ int lastEtMins = hour(last_bar_time, "America/New_York") * 60 + minute(last_bar_
 int lastDayStart = last_bar_time - (lastEtMins >= 1080 ? lastEtMins - 1080 : lastEtMins + 360) * 60000
 bool inLastDay = time >= lastDayStart
 
+// RTH EM ANCHOR — the bar that OPENS at 09:30 ET of the current futures day. The RTH open is
+// the open of that bar and nothing else. The publisher cannot send it: it builds the data ten
+// minutes before its own session clock, so at that moment the 09:30 open does not exist yet — at
+// any feed latency, including none at all. Here it costs nothing, because an indicator is live by
+// nature. (28/9/2026)
+// `etMins == 570` is deliberately exact: on a 1/3/5/15/30-minute chart a bar opens at 09:30, on a
+// 1h or daily chart none does — and there the band refuses to draw, which is the correct
+// behaviour. No fallback to "the first bar after 09:30": that would be a wrong open wearing the
+// face of a right one.
+var float rthOpenPx = na
+if inLastDay and etMins == 570
+    rthOpenPx := open
+
 // Session box tracking with proper lifecycle
 var box curAsiaBox = na, var float _asiaHi = na, var float _asiaLo = na, var bool _asiaActive = false
 var box curEUBox = na,   var float _euHi = na,   var float _euLo = na,   var bool _euActive = false
@@ -765,6 +786,7 @@ if needsRedraw
     string rawInput = tfActive ? gexDataActive : ""
     float emHighDisp = na
     float emLowDisp = na
+    float emRangeRthW = na
     if tfActive
         timestampLabel := label.new(bar_index + profileOffset, high + syminfo.mintick * 50, "TLADe " + tickerChoice, color=color.new(color.gray, 100), style=label.style_label_center, textcolor=color.new(color.gray, 40), size=size.tiny)
 
@@ -820,6 +842,11 @@ if needsRedraw
                     emHighDisp := f_convertPrice(s)
                 if not na(s) and t == "EL"
                     emLowDisp := f_convertPrice(s)
+                // EMR = the WIDTH of the RTH EM. It is not a level and it is not drawn where it
+                // is written: the first field is a distance, not a price. This indicator supplies
+                // the anchor itself, from the 09:30 bar on the chart.
+                if not na(s) and t == "EMR"
+                    emRangeRthW := f_convertRange(s)
                 if not na(s) and (t == "CW" or t == "PW")
                     float cv = f_convertPrice(s)
                     float dist = math.abs(cv - close)
@@ -948,6 +975,25 @@ if needsRedraw
                 array.push(gexLines, line.new(leftAnchorX, paPrice, bar_index + profileOffset, paPrice, color=colorStructure, style=line.style_dotted, width=lineWidth, extend=lineExtendInput == "None" ? extend.none : lineExtendInput == "Right" ? extend.right : lineExtendInput == "Both" ? extend.both : (labelSide == "Right" ? extend.both : extend.none)))
                 int paLblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : leftAnchorX
                 array.push(gexLabels, label.new(paLblX, paPrice, str.tostring(paPrice, format.mintick) + " " + array.get(paNames, pi), color=color.new(colorStructure, labelTranspSys), style=label.style_label_left, textcolor=color.white, size=size.small))
+
+    // ── Draw EM RTH, from the width (EMR) ──
+    // The feed sends the width; the anchor is the 09:30 bar of THIS chart. It is what the terminal
+    // already does (clientEngineService.computeEmRthLevels): from the snapshot it takes only the
+    // width. No anchor or no width -> nothing is drawn. No fallback: a band anchored on the wrong
+    // open looks perfectly plausible and cannot be told apart by eye.
+    if tfActive and showSystemLevels and not na(rthOpenPx) and not na(emRangeRthW) and emRangeRthW > 0
+        float halfEmRth = emRangeRthW / 2.0
+        float[]  emRthPrices = array.from(rthOpenPx + halfEmRth, rthOpenPx - halfEmRth)
+        string[] emRthNames  = array.from("EM High RTH", "EM Low RTH")
+        for ei = 0 to 1
+            float emRthP = array.get(emRthPrices, ei)
+            // no f_convertPrice: rthOpenPx comes from the candles, already in chart scale
+            array.push(gexLines, line.new(leftAnchorX, emRthP, bar_index + profileOffset, emRthP, color=colorEM, style=line.style_dashed, width=lineWidth, extend=lineExtendInput == "None" ? extend.none : lineExtendInput == "Right" ? extend.right : lineExtendInput == "Both" ? extend.both : (labelSide == "Right" ? extend.both : extend.none)))
+            int emRthLblX = labelSide == "Right" ? bar_index + profileOffset + profileWidth + 5 : leftAnchorX
+            array.push(gexLabels, label.new(emRthLblX, emRthP, str.tostring(emRthP, format.mintick) + " " + array.get(emRthNames, ei), color=color.new(colorEM, labelTranspSys), style=label.style_label_left, textcolor=color.white, size=size.small))
+            array.push(alertPrices, emRthP)
+            array.push(alertNames, array.get(emRthNames, ei))
+            array.push(alertKinds, "system")
 
     // ── Draw Profile Bars ──
     if showProfile and profileData != ""
