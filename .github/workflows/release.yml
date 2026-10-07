@@ -32,6 +32,19 @@ jobs:
           zip -r ../TLADe-NT8-Bridge.zip     TLADe-NT8-Bridge
           zip -r ../TLADe-ATAS-Bundle.zip    TLADe-ATAS-Bundle
           cd ..
+          # The NT8 indicator on its own, zipped from inside its folder so the
+          # paths stay Indicators/... and Info.xml, which is what NinjaTrader's
+          # importer expects.
+          #
+          # This is the asset the PRODUCT links to: the terminal's Indicators
+          # page points straight at it (terminal/constants/indicatorCatalog.ts),
+          # so it is the file every NinjaTrader subscriber downloads. It used to
+          # be uploaded by hand, and went three weeks stale without anyone
+          # noticing: the CI kept rebuilding TLADe-NT8-Bridge.zip, which nobody
+          # downloads, while the one people actually get stayed on an old build.
+          # A subscriber found it by reporting a bug that was already fixed.
+          # (7 October 2026)
+          ( cd bridges/ninjatrader/TLADeGexDashboardNT && zip -r "$GITHUB_WORKSPACE/TLADeGexDashboardNT.zip" Indicators Info.xml )
           # All-in-one bundle (for legacy bookmarks pointing to the previous
           # main.zip pattern, and for users who want every bridge at once).
           mkdir -p pkg-all/TLADe-AllBridges
@@ -64,6 +77,7 @@ jobs:
             | NinjaTrader 8 | `TLADe-NT8-Bridge.zip` |
             | ATAS Platform (full bundle: bridge + GEX Dashboard + Quantum Field Ladder) | `TLADe-ATAS-Bundle.zip` |
             | All bridges (full bundle, fallback) | `TLADe-AllBridges.zip` |
+            | NinjaTrader 8 indicator only (what the terminal links to) | `TLADeGexDashboardNT.zip` |
 
             Source: `bridges/<feed>/` in the repo. Pick the feed you use,
             download the matching zip, "Extract All", run `start.bat`.
@@ -71,6 +85,7 @@ jobs:
             TLADe-IB-Bridge.zip
             TLADe-Rithmic-Bridge.zip
             TLADe-NT8-Bridge.zip
+            TLADeGexDashboardNT.zip
             TLADe-ATAS-Bundle.zip
             TLADe-AllBridges.zip
           make_latest: true
