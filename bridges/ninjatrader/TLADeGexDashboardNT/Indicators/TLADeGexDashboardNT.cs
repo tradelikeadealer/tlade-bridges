@@ -1257,7 +1257,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (ShowLabels)
                 {
                     string textTag = $"TLADeText_{key}";
-                    string display = $"{lvl.Label} {(EffectiveDisplayTicker() == "SPY" || EffectiveDisplayTicker() == "QQQ" ? y.ToString("0.##", inv) : y.ToString("0.##", inv))}";
+                    string display = $"{lvl.Label} {(DisplayScale() == "SPY" || DisplayScale() == "QQQ" ? y.ToString("0.##", inv) : y.ToString("0.##", inv))}";
                     var t = Draw.Text(this, textTag, display, labelBarsAgo, y, lvlBrush);
                     if (t != null && _labelFont != null)
                         t.Font = _labelFont;
@@ -1284,7 +1284,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (ShowLabels)
                 {
                     string textTag = $"TLADeText_{key}";
-                    string display = $"{(EffectiveDisplayTicker() == "SPY" || EffectiveDisplayTicker() == "QQQ" ? y.ToString("0.##", inv) : Math.Round(y).ToString("0", inv))} {LevelName(lvl.Type, lvl.Label)}";
+                    string display = $"{(DisplayScale() == "SPY" || DisplayScale() == "QQQ" ? y.ToString("0.##", inv) : Math.Round(y).ToString("0", inv))} {LevelName(lvl.Type, lvl.Label)}";
                     var t = Draw.Text(this, textTag, display, labelBarsAgo, y, paBrush);
                     if (t != null && _labelFont != null) t.Font = _labelFont;
                     _tags.Add(textTag);
@@ -1294,6 +1294,24 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private void DrawLevels(double spot, int labelBarsAgo, int leftBarsAgo, int rightBarsAgo)
         {
+            // Without the spread a cash chart gets NOTHING, and is told why. Drawing the
+            // strikes in futures points instead - the old behaviour - put a number on the
+            // axis that looks right and is not. (Stefano, 7/10/2026)
+            if (CashScaleWithoutSpread())
+            {
+                Draw.TextFixed(this, "TLADeNoSpread",
+                    "TLADe - no levels on " + DisplayScale() + Environment.NewLine +
+                    "waiting for the spread from the data feed." + Environment.NewLine +
+                    "Cash levels are not drawn without it.",
+                    TextPosition.TopRight,
+                    Brushes.Goldenrod,
+                    _labelFont ?? new SimpleFont("Arial", 12),
+                    Brushes.Transparent,
+                    Brushes.Transparent,
+                    0);
+                return;
+            }
+
             int maxVisible = MaxGexLevels <= 0 ? 10 : MaxGexLevels;
             int halfMax = (int)Math.Ceiling(maxVisible / 2.0);
             bool maxIsAll = maxVisible >= 999;
@@ -1549,7 +1567,11 @@ namespace NinjaTrader.NinjaScript.Indicators
         /// overwritten — NT8 would persist the override into the workspace
         /// and force the wrong value on a differently-symbolled chart.
         /// </summary>
-        private string EffectiveDisplayTicker()
+        /// <summary>
+        /// WHICH DATA to ask for: the instrument family, ES or NQ. SPX and SPY are the S&amp;P
+        /// family, NDX and QQQ the Nasdaq one.
+        /// </summary>
+        private string DataFamily()
         {
             if (AutoDetectTicker && Instrument != null && Instrument.MasterInstrument != null)
             {
@@ -1558,29 +1580,77 @@ namespace NinjaTrader.NinjaScript.Indicators
                     return "NQ";
                 if (sym.StartsWith("MES") || sym.StartsWith("ES") || sym == "SPX" || sym == "SPY")
                     return "ES";
-                // unknown symbol → fall through to the user's manual setting
+                // unknown symbol: fall through to the user's manual setting
             }
-            return DisplayTicker ?? "ES";
+            string manual = (DisplayTicker ?? "ES").ToUpperInvariant();
+            return (manual == "NQ" || manual == "NDX" || manual == "QQQ") ? "NQ" : "ES";
+        }
+
+        /// <summary>
+        /// WHICH SCALE to draw in: the chart's own ticker, not its family.
+        ///
+        /// Keeping this apart from DataFamily() is the whole point. The two questions used to
+        /// share one answer, which returned the FAMILY — so a SPY chart asked for S&amp;P data
+        /// (right) and then drew it in ES points (wrong). The "SPY" and "QQQ" branches of
+        /// ConvertPrice were unreachable whenever auto-detect was on, which is the default,
+        /// and every level landed ten times above the top of the axis. Reported by a
+        /// subscriber as "the indicator does not plot levels on SPY" (7/10/2026): they were
+        /// plotted, just off-screen, which looks exactly the same.
+        /// </summary>
+        private string DisplayScale()
+        {
+            if (AutoDetectTicker && Instrument != null && Instrument.MasterInstrument != null)
+            {
+                string sym = (Instrument.MasterInstrument.Name ?? "").ToUpperInvariant();
+                if (sym == "SPY") return "SPY";
+                if (sym == "QQQ") return "QQQ";
+                if (sym == "SPX") return "SPX";
+                if (sym == "NDX") return "NDX";
+                if (sym.StartsWith("MNQ") || sym.StartsWith("NQ")) return "NQ";
+                if (sym.StartsWith("MES") || sym.StartsWith("ES")) return "ES";
+                // unknown symbol: fall through to the user's manual setting
+            }
+            return (DisplayTicker ?? "ES").ToUpperInvariant();
+        }
+
+        /// <summary>
+        /// The chart is drawn in a cash scale (SPX/SPY/NDX/QQQ) and we do not have the spread
+        /// for it. Nothing may be drawn in that state.
+        ///
+        /// The previous behaviour was to fall back to futures points and draw anyway. That is
+        /// worse than drawing nothing: a confident, wrong number on the axis is indis-
+        /// tinguishable from a right one. Without the exact spread you do not trade
+        /// (Stefano, 7/10/2026).
+        /// </summary>
+        private bool CashScaleWithoutSpread()
+        {
+            switch (DisplayScale())
+            {
+                case "SPX":
+                case "SPY": return EsSpxSpread <= 0;
+                case "NDX":
+                case "QQQ": return NqNdxSpread <= 0;
+                default:    return false;   // ES and NQ are the strikes' own scale
+            }
         }
 
         private bool IsNqFamily()
         {
-            string t = EffectiveDisplayTicker().ToUpperInvariant();
-            return t == "NQ" || t == "NDX" || t == "QQQ";
+            return DataFamily() == "NQ";
         }
 
         private double ConvertPrice(double esPrice)
         {
-            string t = EffectiveDisplayTicker().ToUpperInvariant();
+            string t = DisplayScale().ToUpperInvariant();
             switch (t)
             {
-                // No built-in spread: when the data string carries no S: the strikes stay in
-                // futures points (identity) instead of being shifted by a stale number.
-                case "SPX": return EsSpxSpread <= 0 ? esPrice : esPrice - EsSpxSpread;
-                case "SPY": return EsSpxSpread <= 0 ? esPrice : (esPrice - EsSpxSpread) / 10.0;
+                // No identity fallback: a cash scale without its spread returns NaN and the
+                // caller draws nothing. CashScaleWithoutSpread() says why.
+                case "SPX": return EsSpxSpread <= 0 ? double.NaN : esPrice - EsSpxSpread;
+                case "SPY": return EsSpxSpread <= 0 ? double.NaN : (esPrice - EsSpxSpread) / 10.0;
                 case "NQ":  return esPrice;  // raw NQ price
-                case "NDX": return NqNdxSpread <= 0 ? esPrice : esPrice - NqNdxSpread;
-                case "QQQ": return NqNdxSpread <= 0 ? esPrice : (esPrice - NqNdxSpread) / (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0);
+                case "NDX": return NqNdxSpread <= 0 ? double.NaN : esPrice - NqNdxSpread;
+                case "QQQ": return NqNdxSpread <= 0 ? double.NaN : (esPrice - NqNdxSpread) / (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0);
                 default:    return esPrice;  // ES
             }
         }
@@ -1588,13 +1658,13 @@ namespace NinjaTrader.NinjaScript.Indicators
         // Chart-display price back into futures space (the strikes' space)
         private double ToFuturesSpace(double displayPrice)
         {
-            string t = EffectiveDisplayTicker().ToUpperInvariant();
+            string t = DisplayScale().ToUpperInvariant();
             switch (t)
             {
-                case "SPX": return EsSpxSpread <= 0 ? displayPrice : displayPrice + EsSpxSpread;
-                case "SPY": return EsSpxSpread <= 0 ? displayPrice : displayPrice * 10.0 + EsSpxSpread;
-                case "NDX": return NqNdxSpread <= 0 ? displayPrice : displayPrice + NqNdxSpread;
-                case "QQQ": return NqNdxSpread <= 0 ? displayPrice : displayPrice * (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0) + NqNdxSpread;
+                case "SPX": return EsSpxSpread <= 0 ? double.NaN : displayPrice + EsSpxSpread;
+                case "SPY": return EsSpxSpread <= 0 ? double.NaN : displayPrice * 10.0 + EsSpxSpread;
+                case "NDX": return NqNdxSpread <= 0 ? double.NaN : displayPrice + NqNdxSpread;
+                case "QQQ": return NqNdxSpread <= 0 ? double.NaN : displayPrice * (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0) + NqNdxSpread;
                 default:    return displayPrice;
             }
         }
@@ -1666,7 +1736,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         private string FormatPrice(double esPrice)
         {
             double converted = ConvertPrice(esPrice);
-            string t = EffectiveDisplayTicker().ToUpperInvariant();
+            string t = DisplayScale().ToUpperInvariant();
             if (t == "SPY" || t == "QQQ")
                 return converted.ToString("0.##", inv);
             return Math.Round(converted).ToString("0", inv);
