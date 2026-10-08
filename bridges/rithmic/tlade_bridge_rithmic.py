@@ -119,7 +119,7 @@ def _code_to_rithmic(code):
 async def rithmic_loop():
     global connected
     from async_rithmic import RithmicClient
-    from async_rithmic.enums import DataType, TimeBarType
+    from async_rithmic.enums import DataType, TimeBarType, SysInfraType
 
     async def on_tick(data):
         sym_full = data.get('symbol', '')
@@ -151,9 +151,15 @@ async def rithmic_loop():
             )
             client.on_tick += on_tick
 
-            await asyncio.wait_for(client.connect(), timeout=30)
+            # Market data only: ticker + history. The order and P&L plants are never used by
+            # the bridge, and on data-only / paper entitlements they answer 'permission denied'
+            # (rpCode 13) — which used to kill a connection that never needed them.
+            await asyncio.wait_for(
+                client.connect(plants=[SysInfraType.TICKER_PLANT, SysInfraType.HISTORY_PLANT]),
+                timeout=30,
+            )
             connected = True
-            print('[Rithmic] Connected!')
+            print('[Rithmic] Connected! (market data + history plants only)')
 
             ticker = client.plants["ticker"]
             history = client.plants["history"]

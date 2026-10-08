@@ -46,6 +46,14 @@ S:<spread>|L:<levels>|P:<profile>
 - **`L:`** — list of structural levels: walls (`CW`/`PW`), system
   markers (`ZG`, `MP`, `EH`, `EL`, `VH`, `VL`), and PA structure
   (`PDH`/`PDL`/`PWH`/`PWL`) with their tooltips and magnitudes.
+- **`EMR`** (inside `L:`) — the odd one out: its first field is a
+  **width in points, not a price**. It is the Expected Move range of the
+  RTH session, and the indicator anchors it itself at the open of the
+  09:30 ET bar on your chart. The publisher cannot do it: it builds the
+  data ten minutes before its own session clock, so at that moment the
+  09:30 open does not exist yet. On a chart with no bar starting exactly
+  at 09:30 — 1h, 4h, daily — the band is not drawn at all, rather than
+  drawn on an approximate open.
 - **`P:`** — per-strike GEX profile values, drawn as a histogram on
   the right side of the chart.
 
