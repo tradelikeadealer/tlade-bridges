@@ -58,29 +58,41 @@ jobs:
           cd ..
           ls -la *.zip
 
+      # The release notes are the download table plus CHANGELOG.md, so the page
+      # people land on says what changed and what is open, instead of only
+      # listing files. The changelog is the source; this just carries it.
+      - name: Compose release notes
+        run: |
+          cat > RELEASE_BODY.md <<'HEADER'
+          Per-bridge installer bundles, auto-built on every commit to `main`.
+
+          Each zip extracts into a single self-contained folder with
+          `start.bat` (Windows) and `start.command` (macOS, where applicable)
+          at the top — no nested directories, no irrelevant files.
+
+          | Bridge | Download |
+          |---|---|
+          | Interactive Brokers | `TLADe-IB-Bridge.zip` |
+          | Rithmic (Apex / TopstepTrader / Bulenox / 12+ prop firms) | `TLADe-Rithmic-Bridge.zip` |
+          | NinjaTrader 8 | `TLADe-NT8-Bridge.zip` |
+          | ATAS Platform (full bundle: bridge + GEX Dashboard + Quantum Field Ladder) | `TLADe-ATAS-Bundle.zip` |
+          | All bridges (full bundle, fallback) | `TLADe-AllBridges.zip` |
+          | NinjaTrader 8 indicator only (what the terminal links to) | `TLADeGexDashboardNT.zip` |
+
+          Source: `bridges/<feed>/` in the repo. Pick the feed you use,
+          download the matching zip, "Extract All", run `start.bat`.
+
+          ---
+
+          HEADER
+          cat CHANGELOG.md >> RELEASE_BODY.md
+
       - name: Publish to "latest" release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Bridges
-          body: |
-            Per-bridge installer bundles, auto-built on every commit to `main`.
-
-            Each zip extracts into a single self-contained folder with
-            `start.bat` (Windows) and `start.command` (macOS, where applicable)
-            at the top — no nested directories, no irrelevant files.
-
-            | Bridge | Download |
-            |---|---|
-            | Interactive Brokers | `TLADe-IB-Bridge.zip` |
-            | Rithmic (Apex / TopstepTrader / Bulenox / 12+ prop firms) | `TLADe-Rithmic-Bridge.zip` |
-            | NinjaTrader 8 | `TLADe-NT8-Bridge.zip` |
-            | ATAS Platform (full bundle: bridge + GEX Dashboard + Quantum Field Ladder) | `TLADe-ATAS-Bundle.zip` |
-            | All bridges (full bundle, fallback) | `TLADe-AllBridges.zip` |
-            | NinjaTrader 8 indicator only (what the terminal links to) | `TLADeGexDashboardNT.zip` |
-
-            Source: `bridges/<feed>/` in the repo. Pick the feed you use,
-            download the matching zip, "Extract All", run `start.bat`.
+          body_path: RELEASE_BODY.md
           files: |
             TLADe-IB-Bridge.zip
             TLADe-Rithmic-Bridge.zip

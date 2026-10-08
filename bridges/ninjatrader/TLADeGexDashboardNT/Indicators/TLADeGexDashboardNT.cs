@@ -1,4 +1,5 @@
-﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.0 (13 September 2026)
+﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.1 (7 October 2026)
+// Changes since 3.5.0 are in CHANGELOG.md at the root of this repository.
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
 // confluence zones (% of EM), silent above 1H, level-cross alerts. Layout offsets are NT8's own.
