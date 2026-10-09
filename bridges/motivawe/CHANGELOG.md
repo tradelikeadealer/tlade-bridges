@@ -1,5 +1,28 @@
 # CHANGELOG — MotiveWave Indicator
 
+## 2026-10-09 - Previous day and previous week read the clock, not the loaded bars
+
+Reported by Blake: "I think it display T2 high/low instead pd high low". He was right, and
+he was simply looking at his chart during European hours.
+
+`computeLocalPA` groups the chart's bars into futures days on the 18:00 ET boundary, then
+took the second-to-last day **present in the series**, with the assumption written into the
+comment: `prior completed day (last = current)`. Whenever the running futures day had not
+printed a bar yet, the last day present was yesterday and the second-to-last the day before,
+so PDH and PDL came out at T-2. The week carried the identical flaw and reached back two
+weeks on a Monday before the open; nobody had reported that one.
+
+Both now derive the running futures day from the clock - the same 18:00 ET boundary applied
+to `now` - and take the last key strictly before it. The Monday-of-week arithmetic moved into
+`mondayOf()`, so this file states it once instead of twice.
+
+This was never a chart setting for the user to get right. These four levels are not published
+by the feed (settled 22/9): every front-end computes them from its own bars, so the same
+assumption is worth checking in the NinjaTrader and ATAS studies and in the terminal.
+
+Rebuilt with JDK 26, `--release 25`, against `mwave_sdk.jar` - Java 25 bytecode, so it keeps
+loading on both the macOS (Java 25) and Windows (Java 26) builds.
+
 ## 2026-09-13 — Release 3.5.0: the canonical set
 
 `TLADeGexDashboard.java` brought to the same feature set as the TradingView
