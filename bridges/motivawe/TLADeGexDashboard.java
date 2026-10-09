@@ -1055,6 +1055,20 @@ public class TLADeGexDashboard extends Study
   // Computed from the chart's own bars (display price) — Mother is GEX-only, so price-dependent
   // levels live in each front-end, no longer shipped in the feed. Returns {price, kind} where
   // kind = 0:PDH 1:PDL 2:PWH 3:PWL. java.time is fully-qualified to avoid touching imports.
+  // The futures day that is running right now: the ET calendar date, rolled to the next day from
+  // 18:00 ET. Same boundary the bar loop above uses, read from the clock instead of from the data.
+  private static long currentFuturesDayKey(java.time.ZoneId etZone)
+  {
+    java.time.ZonedDateTime nowEt = java.time.ZonedDateTime.now(etZone);
+    java.time.LocalDate fd = (nowEt.getHour() >= 18) ? nowEt.toLocalDate().plusDays(1) : nowEt.toLocalDate();
+    return fd.toEpochDay();
+  }
+
+  private static java.time.LocalDate mondayOf(java.time.LocalDate d)
+  {
+    return d.minusDays((d.getDayOfWeek().getValue() + 6) % 7);
+  }
+
   private java.util.List<double[]> computeLocalPA(DataSeries series)
   {
     java.util.List<double[]> out = new java.util.ArrayList<>();
@@ -1074,15 +1088,24 @@ public class TLADeGexDashboard extends Study
       else { if (h > hl[0]) hl[0] = h; if (l < hl[1]) hl[1] = l; }
     }
     java.util.List<Long> dk = new java.util.ArrayList<>(day.keySet());
-    if (dk.size() >= 2) {
-      double[] pd = day.get(dk.get(dk.size() - 2)); // prior completed day (last = current)
+    // Which futures day is running comes from the CLOCK, not from the bars. Until 9/10/2026 this
+    // took the second-to-last day present in the series and assumed the last one was today. On any
+    // chart whose current session has not printed yet the last day present is yesterday, so
+    // "previous day" landed one day further back and PDH/PDL showed the day before yesterday.
+    // Reported by Blake, who was simply looking at his chart in European hours. A user must never
+    // have to arrange his session template around our arithmetic.
+    long curDayKey = currentFuturesDayKey(etZone);
+    Long prevDayKey = null;
+    for (int i = dk.size() - 1; i >= 0; i--) { if (dk.get(i) < curDayKey) { prevDayKey = dk.get(i); break; } }
+    if (prevDayKey != null) {
+      double[] pd = day.get(prevDayKey);
       out.add(new double[] { pd[0], 0 });
       out.add(new double[] { pd[1], 1 });
     }
     java.util.TreeMap<Long, double[]> week = new java.util.TreeMap<>();
     for (Long d : dk) {
       java.time.LocalDate ld = java.time.LocalDate.ofEpochDay(d);
-      java.time.LocalDate mon = ld.minusDays((ld.getDayOfWeek().getValue() + 6) % 7); // Monday of week
+      java.time.LocalDate mon = mondayOf(ld);
       long wk = mon.toEpochDay();
       double[] dhl = day.get(d);
       double[] whl = week.get(wk);
@@ -1090,8 +1113,13 @@ public class TLADeGexDashboard extends Study
       else { if (dhl[0] > whl[0]) whl[0] = dhl[0]; if (dhl[1] < whl[1]) whl[1] = dhl[1]; }
     }
     java.util.List<Long> wk2 = new java.util.ArrayList<>(week.keySet());
-    if (wk2.size() >= 2) {
-      double[] pw = week.get(wk2.get(wk2.size() - 2));
+    // Same correction on the week: the running week is the one containing the running futures day,
+    // so on a Monday before the session prints, "previous week" was reaching back two weeks.
+    long curWeekKey = mondayOf(java.time.LocalDate.ofEpochDay(curDayKey)).toEpochDay();
+    Long prevWeekKey = null;
+    for (int i = wk2.size() - 1; i >= 0; i--) { if (wk2.get(i) < curWeekKey) { prevWeekKey = wk2.get(i); break; } }
+    if (prevWeekKey != null) {
+      double[] pw = week.get(prevWeekKey);
       out.add(new double[] { pw[0], 2 });
       out.add(new double[] { pw[1], 3 });
     }
