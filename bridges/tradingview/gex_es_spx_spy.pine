@@ -1,5 +1,9 @@
 //@version=6
-// TLADe GEX Levels — ES/SPX/SPY — release 3.5.0 (13 September 2026)
+// TLADe GEX Levels — ES/SPX/SPY — release 3.5.1 (12 October 2026)
+// 3.5.1 — SPY levels were converted with a hardcoded /10. SPY tracks the index at roughly a
+//         tenth, and "roughly" is not a conversion: the real ratio was 10.033 on 12/10/2026,
+//         so every SPY level sat about 2.6 points high. The ratio now travels in the data
+//         string as R:, exactly as the NQ twin already did for QQQ.
 indicator("GEX Levels + Breakout Structure + Session AVWAP — ES/SPX/SPY", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -12,6 +16,13 @@ tickerChoice = input.string("ES", "Display Ticker", options=["ES", "SPX", "SPY"]
 // hardcoded default — if the string is missing the S: prefix the convert
 // function falls back to identity (= ES strikes shown unchanged).
 var float esSpxSpread = 0.0
+// SPX→SPY ratio from the data string (R:). SPY is NOT SPX/10: it tracks the index at
+// roughly a tenth and the ratio climbs as distributions accumulate — 10.033 measured on
+// 12/10/2026, which puts a hardcoded /10 about 2.6 points high on every SPY level. The 10
+// below only keeps f_convertPrice() finite before the string is parsed; on a SPY chart
+// nothing is drawn until a real R: has been read.
+var float spxSpyRatio = 10.0
+var bool  spxSpyRatioLoaded = false
 
 // The indicator is an intraday tool. On charts above 1H (4H, D, W…) it draws nothing unless
 // the user asks for it — GEX lines, profile and session boxes on a daily chart are noise.
@@ -135,7 +146,7 @@ alertBOS = input.bool(true, "Breakouts", group=groupAlerts, inline="al1")
 // shows ES strikes unchanged for SPX/SPY too. Better than applying a stale
 // hardcoded default that would silently shift every level.
 f_convertPrice(float esPrice) =>
-    esSpxSpread <= 0 ? esPrice : tickerChoice == "SPX" ? esPrice - esSpxSpread : tickerChoice == "SPY" ? (esPrice - esSpxSpread) / 10.0 : esPrice
+    esSpxSpread <= 0 ? esPrice : tickerChoice == "SPX" ? esPrice - esSpxSpread : tickerChoice == "SPY" ? (esPrice - esSpxSpread) / spxSpyRatio : esPrice
 
 // Converts a WIDTH, not a price. f_convertPrice subtracts the spread and then divides. On a
 // distance the spread must NOT be subtracted — it is an offset and cancels between the two
@@ -143,7 +154,7 @@ f_convertPrice(float esPrice) =>
 // wide on the ETF proxy. Rule #12: gex_es_spx_spy.pine is the canonical copy; the NQ file divides by the
 // dynamic ndxQqqRatio instead
 f_convertRange(float w) =>
-    tickerChoice == "SPY" ? w / 10.0 : w
+    tickerChoice == "SPY" ? w / spxSpyRatio : w
 
 f_formatPrice(float esPrice) =>
     float cv = f_convertPrice(esPrice)
@@ -188,6 +199,7 @@ var label[] confluenceLabels = array.new_label()
 var line[] gexLines = array.new_line()
 var label[] gexLabels = array.new_label()
 var label timestampLabel = na
+var label ratioErrLabel = na
 var string prevState = ""
 // The GEX/system levels currently drawn (chart scale) — what the cross alerts watch.
 var float[]  alertPrices = array.new_float()
@@ -433,7 +445,7 @@ if new5mBar and array.size(wallStrikes) > 0
     if esSpxSpread > 0 and tickerChoice == "SPX"
         close5mES := close5m + esSpxSpread
     else if esSpxSpread > 0 and tickerChoice == "SPY"
-        close5mES := close5m * 10.0 + esSpxSpread
+        close5mES := close5m * spxSpyRatio + esSpxSpread
     int n = array.size(wallStrikes)
     for i = 0 to n - 1
         float strike = array.get(wallStrikes, i)
@@ -763,6 +775,9 @@ if needsRedraw
     if not na(timestampLabel)
         label.delete(timestampLabel)
         timestampLabel := na
+    if not na(ratioErrLabel)
+        label.delete(ratioErrLabel)
+        ratioErrLabel := na
     array.clear(alertPrices)
     array.clear(alertNames)
     array.clear(alertKinds)
@@ -787,6 +802,19 @@ if needsRedraw
                 esSpxSpread := parsedSpread
             rawInput := str.substring(rawInput, sEnd + 1)
 
+    // R: — il rapporto SPX→SPY, letto come fa il gemello NQ con il suo NDX→QQQ. Va tolto
+    // QUI, prima del test su "L:": senza questo blocco la sezione dei livelli comincerebbe
+    // con "R:10.033|L:..." e startswith("L:") fallirebbe, lasciando il profilo disegnato e
+    // zero livelli. (12/10/2026)
+    if str.startswith(rawInput, "R:")
+        int rEnd = str.pos(rawInput, "|")
+        if rEnd > 2
+            float parsedRatio = str.tonumber(str.substring(rawInput, 2, rEnd))
+            if not na(parsedRatio) and parsedRatio > 0
+                spxSpyRatio := parsedRatio
+                spxSpyRatioLoaded := true
+            rawInput := str.substring(rawInput, rEnd + 1)
+
     if str.contains(rawInput, "|P:")
         int pipePos = str.pos(rawInput, "|P:")
         string beforePipe = str.substring(rawInput, 0, pipePos)
@@ -796,8 +824,14 @@ if needsRedraw
     else
         profileData := rawInput
 
+    // SPY needs the SPX→SPY ratio from the data string: without it the levels are hidden and
+    // an error is shown, never drawn with a stale divisor. Same rule as QQQ in the NQ twin.
+    bool spyNoRatio = tfActive and tickerChoice == "SPY" and not spxSpyRatioLoaded
+    if spyNoRatio
+        ratioErrLabel := label.new(bar_index, high, "TLADe: SPY ratio missing — re-copy the data string (it must include R:).", color=color.new(color.red, 20), textcolor=color.white, style=label.style_label_down, size=size.normal)
+
     // ── Draw Levels (identical to GEX Dashboard v6.8) ──
-    if levelsData != ""
+    if levelsData != "" and not spyNoRatio
         string[] levelPairs = str.split(levelsData, ";")
         int gexAboveDrawn = 0
         int gexBelowDrawn = 0
@@ -1013,7 +1047,7 @@ if needsRedraw
         string[] allNames = array.new_string()
 
         // GEX walls + system + structure from parsed data
-        if levelsData != ""
+        if levelsData != "" and not spyNoRatio
             string[] lpairs = str.split(levelsData, ";")
             for lpair in lpairs
                 string[] p = str.split(lpair, ",")
