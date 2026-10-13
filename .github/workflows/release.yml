@@ -45,6 +45,15 @@ jobs:
           # A subscriber found it by reporting a bug that was already fixed.
           # (7 October 2026)
           ( cd bridges/ninjatrader/TLADeGexDashboardNT && zip -r "$GITHUB_WORKSPACE/TLADeGexDashboardNT.zip" Indicators Info.xml )
+          # The MotiveWave jar is a BUILT artifact committed in the repo, and the
+          # Indicators page links it straight off this release. It was not in the
+          # files list below, so a push refreshed NT8 and ATAS and left MotiveWave
+          # on whatever jar had last been uploaded by hand: on 13 October the
+          # release carried a 35898-byte jar while the repo held the 36149-byte
+          # 3.5.2 build with the SPY ratio fix. Same failure that left
+          # TLADeGexDashboardNT.zip three weeks stale in October. Carried here so
+          # the download URL never has to change and never goes stale again.
+          cp bridges/motivawe/dist/TLADeGexDashboard.jar "$GITHUB_WORKSPACE/TLADeGexDashboard.jar"
           # All-in-one bundle (for legacy bookmarks pointing to the previous
           # main.zip pattern, and for users who want every bridge at once).
           mkdir -p pkg-all/TLADe-AllBridges
@@ -78,6 +87,7 @@ jobs:
           | ATAS Platform (full bundle: bridge + GEX Dashboard + Quantum Field Ladder) | `TLADe-ATAS-Bundle.zip` |
           | All bridges (full bundle, fallback) | `TLADe-AllBridges.zip` |
           | NinjaTrader 8 indicator only (what the terminal links to) | `TLADeGexDashboardNT.zip` |
+          | MotiveWave study (one jar: macOS, Windows, Linux) | `TLADeGexDashboard.jar` |
 
           Source: `bridges/<feed>/` in the repo. Pick the feed you use,
           download the matching zip, "Extract All", run `start.bat`.
@@ -100,5 +110,6 @@ jobs:
             TLADeGexDashboardNT.zip
             TLADe-ATAS-Bundle.zip
             TLADe-AllBridges.zip
+            TLADeGexDashboard.jar
           make_latest: true
           fail_on_unmatched_files: true
