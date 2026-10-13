@@ -15,6 +15,9 @@
     <Compile Remove="bin\**\*.cs" />
     <Compile Remove="obj\**\*.cs" />
     <Compile Remove="mac\**\*.cs" />
+    <!-- as-delivered reference copy: same classes as the live files, so compiling
+         both yields duplicate-member errors. Kept for diffing, never built. -->
+    <Compile Remove="original\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>
@@ -48,6 +51,10 @@
     </Reference>
     <Reference Include="OFT.Attributes">
       <HintPath>C:\Program Files (x86)\ATAS Platform\OFT.Attributes.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="Utils.Common">
+      <HintPath>C:\Program Files (x86)\ATAS Platform\Utils.Common.dll</HintPath>
       <Private>false</Private>
     </Reference>
   </ItemGroup>

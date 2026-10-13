@@ -1,4 +1,4 @@
-﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.1 (7 October 2026)
+﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.2 (13 October 2026)
 // Changes since 3.5.0 are in CHANGELOG.md at the root of this repository.
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
@@ -65,7 +65,9 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         private int _lastDrawnBar = -1;
         private bool _isDelayedMode = false;
-        private double _ndxQqqRatio = 0.0;   // NDX→QQQ ratio from the data string (R:), NQ family only
+        // Index→ETF ratio from the data string (R:). One field for both families: the string
+        // decides which ratio it carries — NDX→QQQ (~41) on an NQ string, SPX→SPY (~10) on an ES one.
+        private double _ndxQqqRatio = 0.0;
 
         // ── Wall flip, the TradingView rule: two consecutive 5-minute closes beyond the strike flip
         // the wall (and two the other way restore it). State per wall (futures-space strike), reset
@@ -189,7 +191,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (State == State.SetDefaults)
             {
                 Name = "TLADe GEX";
-                Description = "TLADe GEX Levels 3.5.0 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
+                Description = "TLADe GEX Levels 3.5.2 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
                 Calculate = Calculate.OnPriceChange;
                 IsOverlay = true;
                 DisplayInDataBox = false;
@@ -976,7 +978,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                     raw = raw.Substring(sEnd + 1);
                 }
             }
-            // R: NDX→QQQ ratio (NQ family strings only)
+            // R: index→ETF ratio — NDX→QQQ on an NQ string, SPX→SPY on an ES one
             if (raw.StartsWith("R:", StringComparison.Ordinal))
             {
                 int rEnd = raw.IndexOf('|');
@@ -1648,7 +1650,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 // No identity fallback: a cash scale without its spread returns NaN and the
                 // caller draws nothing. CashScaleWithoutSpread() says why.
                 case "SPX": return EsSpxSpread <= 0 ? double.NaN : esPrice - EsSpxSpread;
-                case "SPY": return EsSpxSpread <= 0 ? double.NaN : (esPrice - EsSpxSpread) / 10.0;
+                case "SPY": return EsSpxSpread <= 0 ? double.NaN : (esPrice - EsSpxSpread) / (_ndxQqqRatio >= 9.0 && _ndxQqqRatio <= 12.0 ? _ndxQqqRatio : 10.0);
                 case "NQ":  return esPrice;  // raw NQ price
                 case "NDX": return NqNdxSpread <= 0 ? double.NaN : esPrice - NqNdxSpread;
                 case "QQQ": return NqNdxSpread <= 0 ? double.NaN : (esPrice - NqNdxSpread) / (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0);
@@ -1663,7 +1665,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             switch (t)
             {
                 case "SPX": return EsSpxSpread <= 0 ? double.NaN : displayPrice + EsSpxSpread;
-                case "SPY": return EsSpxSpread <= 0 ? double.NaN : displayPrice * 10.0 + EsSpxSpread;
+                case "SPY": return EsSpxSpread <= 0 ? double.NaN : displayPrice * (_ndxQqqRatio >= 9.0 && _ndxQqqRatio <= 12.0 ? _ndxQqqRatio : 10.0) + EsSpxSpread;
                 case "NDX": return NqNdxSpread <= 0 ? double.NaN : displayPrice + NqNdxSpread;
                 case "QQQ": return NqNdxSpread <= 0 ? double.NaN : displayPrice * (_ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0) + NqNdxSpread;
                 default:    return displayPrice;

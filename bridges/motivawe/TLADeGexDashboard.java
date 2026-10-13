@@ -1,4 +1,4 @@
-// TLADe GEX Levels — MotiveWave — release 3.5.0 (13 September 2026)
+// TLADe GEX Levels — MotiveWave — release 3.5.2 (13 October 2026)
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
 // confluence zones (% of EM), silent above 1H, level-cross signals. Layout (right-edge chips,
@@ -279,7 +279,9 @@ public class TLADeGexDashboard extends Study
   // ES-SPX spread carried by an "S:" data prefix. Overrides the manual spread for
   // price conversion, again without mutating settings from inside calc.
   private double spreadOverride = Double.NaN;
-  private double ndxQqqRatio = Double.NaN;     // NDX→QQQ ratio from the data string (R:)
+  // Index→ETF ratio from the data string (R:). One field for both families: the string decides
+  // which ratio it carries — NDX→QQQ (~41) on an NQ string, SPX→SPY (~10) on an ES one.
+  private double ndxQqqRatio = Double.NaN;
   private volatile List<DrawZone> drawZones = new ArrayList<>();
   private final java.util.Map<Double, Boolean> wallFlipped = new java.util.HashMap<>();
   private final java.util.Map<String, Integer> alertedAt = new java.util.HashMap<>();
@@ -949,7 +951,7 @@ public class TLADeGexDashboard extends Study
         raw = raw.substring(sEnd + 1);
       }
     }
-    // R: NDX→QQQ ratio (NQ family strings only)
+    // R: index→ETF ratio — NDX→QQQ on an NQ string, SPX→SPY on an ES one
     if (raw.startsWith("R:")) {
       int rEnd = raw.indexOf('|');
       if (rEnd > 2) {
@@ -1041,9 +1043,15 @@ public class TLADeGexDashboard extends Study
     double esSpx = (!nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(ES_SPX_SPREAD, 0.0);
     double nqNdx = (nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(NQ_NDX_SPREAD, 0.0);
     double ratio = (!Double.isNaN(ndxQqqRatio) && ndxQqqRatio > 0) ? ndxQqqRatio : 40.0;
+    // Lo stesso campo R: porta il rapporto della famiglia della stringa: ~41 per
+    // NDX/QQQ, ~10 per SPX/SPY. La banda evita il caso incrociato (stringa NQ
+    // mentre si guarda SPY). Fuori banda si ripiega su 10, il numero che era
+    // scritto fisso fino al 13/10/2026 — valore vero quel giorno 10,034.
+    double spyRatio = (!Double.isNaN(ndxQqqRatio) && ndxQqqRatio >= 9.0 && ndxQqqRatio <= 12.0)
+        ? ndxQqqRatio : 10.0;
     switch (t) {
       case "SPX": return esSpx <= 0 ? esPrice : esPrice - esSpx;
-      case "SPY": return esSpx <= 0 ? esPrice : (esPrice - esSpx) / 10.0;
+      case "SPY": return esSpx <= 0 ? esPrice : (esPrice - esSpx) / spyRatio;
       case "NQ":  return esPrice;
       case "NDX": return nqNdx <= 0 ? esPrice : esPrice - nqNdx;
       case "QQQ": return nqNdx <= 0 ? esPrice : (esPrice - nqNdx) / ratio;
@@ -1305,9 +1313,15 @@ public class TLADeGexDashboard extends Study
     double esSpx = (!nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(ES_SPX_SPREAD, 0.0);
     double nqNdx = (nqFamily && !Double.isNaN(spreadOverride)) ? spreadOverride : getSettings().getDouble(NQ_NDX_SPREAD, 0.0);
     double ratio = (!Double.isNaN(ndxQqqRatio) && ndxQqqRatio > 0) ? ndxQqqRatio : 40.0;
+    // Lo stesso campo R: porta il rapporto della famiglia della stringa: ~41 per
+    // NDX/QQQ, ~10 per SPX/SPY. La banda evita il caso incrociato (stringa NQ
+    // mentre si guarda SPY). Fuori banda si ripiega su 10, il numero che era
+    // scritto fisso fino al 13/10/2026 — valore vero quel giorno 10,034.
+    double spyRatio = (!Double.isNaN(ndxQqqRatio) && ndxQqqRatio >= 9.0 && ndxQqqRatio <= 12.0)
+        ? ndxQqqRatio : 10.0;
     switch (t) {
       case "SPX": return esSpx <= 0 ? displayPrice : displayPrice + esSpx;
-      case "SPY": return esSpx <= 0 ? displayPrice : displayPrice * 10.0 + esSpx;
+      case "SPY": return esSpx <= 0 ? displayPrice : displayPrice * spyRatio + esSpx;
       case "NDX": return nqNdx <= 0 ? displayPrice : displayPrice + nqNdx;
       case "QQQ": return nqNdx <= 0 ? displayPrice : displayPrice * ratio + nqNdx;
       default:    return displayPrice;

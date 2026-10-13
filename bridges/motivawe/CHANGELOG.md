@@ -1,5 +1,17 @@
 # CHANGELOG — MotiveWave Indicator
 
+## 2026-10-13 — 3.5.2: SPY takes the measured ratio, not ten
+
+On a SPY chart the study divided the index price by 10 to reach the ETF. The real
+SPX→SPY ratio was 10.034 on 13 October, so every level sat about 2.6 points high. The
+ratio now comes from the `R:` field of the data string, the same field QQQ already used,
+with a 9.0–12.0 band before it is applied to SPY and the old divisor of 10 outside it.
+Full note in the repository CHANGELOG.
+
+Jar rebuilt with `javac --release 25` — class file 69, as every published jar since
+18 September. It loads on the macOS build of MotiveWave (Java 25) and on the Windows and
+Linux builds (Java 26).
+
 ## 2026-10-09 - Previous day and previous week read the clock, not the loaded bars
 
 Reported by Blake: "I think it display T2 high/low instead pd high low". He was right, and

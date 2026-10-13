@@ -36,7 +36,7 @@
 //    PDH/PDL/PWH/PWL=Structure
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// TLADe GEX Levels — ATAS — release 3.5.0 (13 September 2026)
+// TLADe GEX Levels — ATAS — release 3.5.2 (13 October 2026)
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
 // confluence zones (% of EM), profile bars, themes, silent above 1H, level-cross alerts.
@@ -81,7 +81,7 @@ namespace ATAS.Indicators.Technical
         // 125=02:05 EU, 485=08:05 PRE, 575=09:35 RTH, 635=10:35 OR, 785=13:05 CLOSE, 1085=18:05 ASIA.
         private static readonly int[] FETCH_MINUTES_ET = { 125, 485, 575, 635, 785, 1085 };
 
-        // profile (P:) rows, wall flips, drawn levels for the alerts, NDX→QQQ ratio
+        // profile (P:) rows, wall flips, drawn levels for the alerts, index→ETF ratio
         private struct ProfileEntry { public double RawStrike, Value; public int Sign; }
         private readonly List<ProfileEntry> _profile = new List<ProfileEntry>();
         private readonly Dictionary<double, bool> _wallFlipped = new Dictionary<double, bool>();
@@ -895,7 +895,7 @@ namespace ATAS.Indicators.Technical
                     raw = raw.Substring(sEnd + 1);
                 }
             }
-            // R: NDX→QQQ ratio (NQ family strings only)
+            // R: index→ETF ratio — NDX→QQQ on an NQ string, SPX→SPY on an ES one
             if (raw.StartsWith("R:", StringComparison.Ordinal))
             {
                 int rEnd = raw.IndexOf('|');
@@ -1885,15 +1885,21 @@ namespace ATAS.Indicators.Technical
 
         // BOS levels come from native chart candles (ES/NQ) — already in chart price,
         // no spread. ChartToRaw maps to RawStrike space so the shared ConvertPrice()
-        // round-trips back to the same price (ES/NQ/SPX/NDX pass-through; SPY x10, QQQ x40).
+        // round-trips back to the same price (ES/NQ/SPX/NDX pass-through; SPY e QQQ col rapporto da R:, 10 e 40 come ripiego).
         private double ChartToRaw(double chartPrice)
         {
             double esSp = EffectiveEsSpread, nqSp = EffectiveNqSpread;
             double ratio = _ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0;
+            // Lo stesso campo R: porta il rapporto della famiglia della stringa: ~41 per
+            // NDX/QQQ, ~10 per SPX/SPY. La banda evita il caso incrociato — stringa NQ
+            // caricata mentre si guarda SPY — in cui si applicherebbe 41 a SPY. Fuori
+            // banda si ripiega su 10, che e' quello che c'era scritto fisso fino al
+            // 13/10/2026 (valore vero quel giorno: 10,034; errore: 2,6 punti).
+            double spyRatio = (_ndxQqqRatio >= 9.0 && _ndxQqqRatio <= 12.0) ? _ndxQqqRatio : 10.0;
             switch (ResolveTicker())
             {
                 case "SPX": return esSp <= 0 ? chartPrice : chartPrice + esSp;
-                case "SPY": return esSp <= 0 ? chartPrice : chartPrice * 10.0 + esSp;
+                case "SPY": return esSp <= 0 ? chartPrice : chartPrice * spyRatio + esSp;
                 case "NDX": return nqSp <= 0 ? chartPrice : chartPrice + nqSp;
                 case "QQQ": return nqSp <= 0 ? chartPrice : chartPrice * ratio + nqSp;
                 default:    return chartPrice;
@@ -1909,14 +1915,21 @@ namespace ATAS.Indicators.Technical
             // SnapToTick rounds to the instrument's tick grid afterwards.
             // Strikes arrive in FUTURES points (ES / NQ). On a cash or ETF chart the spread from the
             // data string is taken off; with no spread known the strikes stay as they are (identity),
-            // never shifted by a built-in number. Ratio NDX→QQQ from R:, else 40.
+            // never shifted by a built-in number. Ratio from R:, per family: NDX→QQQ (else 40)
+            // on a QQQ chart, SPX→SPY (else 10) on a SPY one.
             double cv;
             double esSp = EffectiveEsSpread, nqSp = EffectiveNqSpread;
             double ratio = _ndxQqqRatio > 0 ? _ndxQqqRatio : 40.0;
+            // Lo stesso campo R: porta il rapporto della famiglia della stringa: ~41 per
+            // NDX/QQQ, ~10 per SPX/SPY. La banda evita il caso incrociato — stringa NQ
+            // caricata mentre si guarda SPY — in cui si applicherebbe 41 a SPY. Fuori
+            // banda si ripiega su 10, che e' quello che c'era scritto fisso fino al
+            // 13/10/2026 (valore vero quel giorno: 10,034; errore: 2,6 punti).
+            double spyRatio = (_ndxQqqRatio >= 9.0 && _ndxQqqRatio <= 12.0) ? _ndxQqqRatio : 10.0;
             switch (ResolveTicker())
             {
                 case "SPX": cv = esSp <= 0 ? rawStrike : rawStrike - esSp; break;
-                case "SPY": cv = esSp <= 0 ? rawStrike : (rawStrike - esSp) / 10.0; break;
+                case "SPY": cv = esSp <= 0 ? rawStrike : (rawStrike - esSp) / spyRatio; break;
                 case "NDX": cv = nqSp <= 0 ? rawStrike : rawStrike - nqSp; break;
                 case "QQQ": cv = nqSp <= 0 ? rawStrike : (rawStrike - nqSp) / ratio; break;
                 default:    cv = rawStrike; break;   // ES / NQ: already in futures space
