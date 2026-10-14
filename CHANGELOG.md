@@ -182,6 +182,53 @@ published on TradingView. Until then the terminal writes `R:` and older Pine ver
 This is `TLAdeBridge.cs`, the indicator that feeds your NinjaTrader prices *into* the
 terminal. It is not the GEX Levels indicator and is not needed to see levels on a chart.
 
+### 3.5.4 — 14 October 2026
+
+**Fixed — one ticker, one instrument. The receiver now refuses a price that cannot belong.**
+The allow-list earlier today stopped the *indicator* from mislabelling a chart, but it only
+helps once the new indicator is actually running — and on NinjaTrader that is not something a
+user can easily tell: NinjaTrader compiles every script you own into a single assembly, so one
+unrelated indicator with an error makes the whole compile fail and leaves the previous build
+in place, with nothing on screen to say so. A subscriber followed every update step and still
+saw the same flicker.
+
+So the refusal now also lives where it cannot be half-applied: in the Python receiver, which
+you restart rather than compile. Each ticker takes its reference from the first price accepted,
+and a later price more than 25% away cannot be the same instrument — the S&P does not move 25%
+in a session, and two different indices are about four times apart. The impostor is refused
+with HTTP 409 and one log line that names both prices and says which chart to look at. The
+legitimate feed is unaffected: measured on the real case, ES 7850 accepted, the MNQ price
+arriving as `ES` refused, the next ES tick at 7851 accepted.
+
+The same guard covers pushed bars, whose reference falls back to the bars already stored when
+no tick has arrived yet — a backfill burst lands before the first tick. And the receiver's own
+ticker map had the identical catch-all defect as the indicator's (`"NQ" if "NQ" in s else "ES"`,
+so a Gold tick would have been stored as the S&P): it is now the same exact allow-list on the
+way in, while the read side still accepts `SPX`/`SPY`/`NDX`/`QQQ` as names for a bucket, since
+choosing what to read is harmless and only writing a cash price into a futures bucket is not.
+
+**New — the bridge says which build it is, and the receiver reports it.**
+`TLAdeBridge` had no version anywhere. It now prints `[TLAdeBridge] v3.5.4 loaded on <symbol>`
+on load, and the version travels with every tick, so `GET /health` answers
+`"indicator_version": {"ES": "3.5.4"}` — or `null`, which means a build older than this one.
+Nobody has to ask a user what they have installed, and an update that silently did not take is
+visible instead of invisible. `/health` also reports `refused_ticks` per ticker.
+
+**Packaging — the superseded copies left the repository, and the exclusion list is gone.**
+The repository held, under the exact filenames of the live files: a complete installable ATAS
+bundle from 2 September (including a `state_atas.json`), the 13 September NT8 indicator zip
+that was withdrawn on 7 October, a 30 August copy of the ATAS dashboard source at 1551 lines
+beside the live 2085, three `original/` folders of contributor sources, and the ATAS `mac/`
+tree whose DLL has the same name as the Windows one — the exact file a subscriber copied before
+losing two days to a chart that drew nothing. None of them were shipped, because the all-in-one
+bundle was followed by a hand-written list of folders to delete, which had already fallen
+behind twice.
+
+They are now outside the repository. The exclusion list is deleted, since every file under
+`bridges/` is current by construction, and in its place the build **refuses to run** if a
+folder of superseded copies ever reappears. A list someone must remember to extend is not a
+safeguard; a build that stops is.
+
 ### 14 October 2026
 
 **Fixed — a chart of the micro Nasdaq published its price as the S&P.**

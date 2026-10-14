@@ -131,32 +131,28 @@ jobs:
           # main.zip pattern, and for users who want every bridge at once).
           mkdir -p pkg-all/TLADe-AllBridges
           cp -r bridges     pkg-all/TLADe-AllBridges/
-          # Strip what must never reach a user. These are tracked files, so the
-          # wholesale copy shipped them: two folders of SUPERSEDED builds - among
-          # them _archive_2026-09-13/ninjatrader/TLADeGexDashboardNT.zip, the 13
-          # September build that was WITHDRAWN on 7 October - plus a convenience
-          # copy of the ATAS bundle, which put a zip inside the zip. Anyone who
-          # extracted this and installed out of an _archive_ folder installed a
-          # build we had already pulled, and the release notes above promise "no
-          # irrelevant files". The archives stay in the repository, which is what
-          # they are for; they just stop being a download. (14 October 2026)
+          # No exclusion list any more, and that is the point. Until 14 October
+          # 2026 this wholesale copy had to be followed by a hand-maintained list
+          # of folders to delete - superseded builds, `original/` contributor
+          # copies, the ATAS `mac/` tree - because the repository held files with
+          # the SAME FILENAMES as the live ones. A customer who extracted the
+          # bundle and copied one of those got a chart with nothing on it and no
+          # error to explain why: two days, for one subscriber, on a duplicate
+          # name. The list had already fallen behind twice.
           #
-          # The list also drops every `original/` folder and the ATAS `mac/` tree. Those
-          # hold files with the SAME FILENAMES as the live ones - atas/mac/bin/Release/
-          # TLAdeBridgeATAS.dll next to atas/bin/Release/net10.0-windows/TLAdeBridgeATAS.dll,
-          # three `original/TLAde*.cs`, two `tlade_bridge_*.py`, one TLADeGexDashboard.java.
-          # That duplicate DLL is the exact one a subscriber copied, got a chart with
-          # nothing on it and no error to explain why, and spent two days on before
-          # writing to us. It was removed from the ATAS bundle on 14 October and was
-          # still sitting in this one. Per-bridge README.md and start.bat files repeat
-          # too, but each lives in its own clearly named bridge folder and nobody
-          # mistakes one for another - those stay.
-          for p in _archive_2026-08-28 _archive_2026-09-13 TLADe-ATAS-Bundle TLADe-ATAS-Bundle.zip                    atas/mac atas/original motivawe/original ninjatrader/original; do
-            if [ ! -e "pkg-all/TLADe-AllBridges/bridges/$p" ]; then
-              echo "ERROR: bridges/$p is gone - update this exclusion list"; exit 1
-            fi
-            rm -rf "pkg-all/TLADe-AllBridges/bridges/$p"
-          done
+          # Those copies now live outside the repository, so every file under
+          # bridges/ is current by construction. What replaces the list is a guard
+          # in the OTHER direction: if a folder of superseded copies ever comes
+          # back, this build STOPS instead of shipping it. A list you must
+          # remember to extend is not a safeguard; a build that refuses is.
+          STALE=$(find bridges -type d \( -name '_archive_*' -o -name original -o -name mac -o -name '*_20[0-9][0-9][0-9][0-9][0-9][0-9]' \) -print)
+          STALE="$STALE$(find bridges -type f \( -name '*([0-9])*' -o -name 'TLADe-ATAS-Bundle.zip' -o -name 'TLADeGexDashboardNT.zip' \) -print)"
+          if [ -n "$STALE" ]; then
+            echo "ERROR: superseded or duplicate-named copies are back in the repository:"
+            echo "$STALE"
+            echo "They must not reach a download. Keep them outside the repo - see CHANGELOG, 14 October 2026."
+            exit 1
+          fi
           cp -r protocol    pkg-all/TLADe-AllBridges/
           cp -r templates   pkg-all/TLADe-AllBridges/
           cp README.md      pkg-all/TLADe-AllBridges/

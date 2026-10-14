@@ -44,6 +44,26 @@ your chart until you explicitly detach it. F5 alone does not swap it.
 On re-attach, the backfill of the most recent ~500 closed bars replays
 toward the receiver, and the live-bar push starts immediately.
 
+## 3b. Check the version — this is how you know it worked
+
+Open the Output Window (**View → New → NinjaScript Output**). On re-attach the
+indicator announces itself:
+
+```
+[TLAdeBridge] v3.5.4 loaded on ES
+```
+
+If that line does not appear, or shows an older version, the update did not
+take and the previously compiled build is still running — go back to step 2.
+NinjaTrader compiles every script you own into one assembly, so an error in
+any *other* indicator makes the whole compile fail and silently leaves the
+old binary in place. The compile result at the bottom of the editor is the
+place to look.
+
+The receiver says the same thing from its side: `http://localhost:5000/health`
+reports `"indicator_version"` per ticker, and `null` there means a build older
+than 3.5.4.
+
 ## 4. (Optional) Hard refresh the terminal browser
 
 To clear any cached candle source state in the browser:

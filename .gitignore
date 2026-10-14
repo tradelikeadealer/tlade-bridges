@@ -26,3 +26,6 @@ bridges/atas/state_atas.json
 
 # MotiveWave SDK is proprietary — never commit
 mwave_sdk*.jar
+
+# Build output. The jar that ships is the one committed in motivawe/dist/.
+bridges/motivawe/build/

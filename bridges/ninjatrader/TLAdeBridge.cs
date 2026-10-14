@@ -1,3 +1,12 @@
+﻿// TLADe local data bridge - NinjaTrader 8 - release 3.5.4 (14 October 2026)
+//
+// Pushes the chart's ticks and closed bars to the TLADe receiver on
+// localhost:5000. It SENDS THE RAW CHART PRICE: only instruments already
+// quoted in the futures scale may pass (see NormalizeTicker).
+//
+// The version above is printed on load and travels with every tick, so
+// "which build is installed?" is a question the log answers by itself.
+
 #region Using declarations
 using System;
 using System.Globalization;
@@ -36,15 +45,29 @@ namespace NinjaTrader.NinjaScript.Indicators
         // the startup burst bounded.
         private const int BACKFILL_BARS = 500;
 
+        // Printed on load and sent with every tick as "v". The receiver reports
+        // it on /health, so support can see which build is feeding the terminal
+        // without asking the user to look anything up. Bump it on every change
+        // that ships - a version that lags the code is worse than none, which is
+        // what "CTOR v3.0" on a 3.5.2 ATAS build already cost us once.
+        private const string VERSION = "3.5.4";
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
             {
-                Description = "TLADe local data bridge — pushes ES/NQ ticks and closed bars to localhost:5000";
+                Description = $"TLADe local data bridge {VERSION} — pushes ES/NQ ticks and closed bars to localhost:5000";
                 Name        = "TLAdeBridge";
                 Calculate   = Calculate.OnEachTick;
                 IsOverlay   = true;
                 IsSuspendedWhileInactive = false;
+            }
+            else if (State == State.DataLoaded)
+            {
+                // One line, on load, naming the build and the chart it sits on.
+                // This is the whole answer to "did my update take?" - an old build
+                // simply does not print it.
+                Print($"[TLAdeBridge] v{VERSION} loaded on {Instrument.MasterInstrument.Name}");
             }
         }
 
@@ -207,7 +230,7 @@ namespace NinjaTrader.NinjaScript.Indicators
         {
             try
             {
-                string payload = $"{{\"ticker\":\"{ticker}\",\"spot\":{price.ToString(CultureInfo.InvariantCulture)},\"ts\":\"{ts:O}\"}}";
+                string payload = $"{{\"ticker\":\"{ticker}\",\"spot\":{price.ToString(CultureInfo.InvariantCulture)},\"ts\":\"{ts:O}\",\"v\":\"{VERSION}\"}}";
                 var content    = new StringContent(payload, Encoding.UTF8, "application/json");
                 var response   = await httpClient.PostAsync("http://localhost:5000/push_spot", content);
                 Print($"[TLAdeBridge] {ticker} {price} → {(response.IsSuccessStatusCode ? "OK" : "FAIL")}");
