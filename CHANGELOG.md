@@ -71,10 +71,42 @@ string comes from `generateQuantumDataString`, which carries no `R:`, so the fix
 not reach it. It also receives Zero Gamma with `nodeType=0`, so it paints it as a wall and
 the top-N sort by intensity drops it first.
 
-ATAS X on macOS is NOT fixed by this build. `TLADe-ATASX.zip` is uploaded by hand — it is not
-in the release workflow — and was last refreshed on 28 September. Its DLL carries all three
-indicators but is built outside this repository, so the Mac Quantum Field Ladder still has the
-blackout described at the top of this entry until someone rebuilds it on a Mac with ATAS X.
+### 3.5.3 — ATAS X (Avalonia, Windows and macOS)
+
+**ATAS X is built from our own sources now, and it is in the CI.**
+`TLADe-ATASX.zip` had been uploaded by hand and sat on the 2 September build for six weeks.
+Since 12 October the Quantum Field Ladder inside it was drawing nothing, like the classic one,
+and nobody could see that the download itself was stale. It is now built on every push, from
+the same three source files as the Windows build, with one compile-time constant:
+
+| | ATAS Platform (classic) | ATAS X |
+|---|---|---|
+| Target | `net10.0-windows` + WPF | `net10.0`, no WPF |
+| DLL | `TLAdeBridgeATAS.dll` | `TLAdeBridgeATASX.dll` |
+| Colours in settings | `System.Windows.Media.Color` | `System.Drawing.Color` |
+
+Only one thing in the indicators was actually tied to WPF: `AddAlert`, whose two colour
+parameters are `System.Windows.Media.Color` in the classic assemblies, a signature that cannot
+be expressed on `net10.0`. On ATAS X it is called through reflection — the platform's own
+signature is read at runtime and the colours built to match — so the DLL can be produced
+without any ATAS X assembly on the build machine. If no signature matches, the alert is logged
+and skipped: a missed alert is not worth a dead indicator.
+
+**What ATAS X loses in this build: worldline AVWAP.** It was in the 2 September DLL and not in
+this repository — it lived only in the contributor's branch and never came back. The commit
+that published that build says of it: "Not verified on macOS worldlines — nobody has said they
+tested it there." ATAS X is now at feature parity with Windows, from one set of sources, which
+is the only arrangement that does not drift again. Re-adding worldlines is a separate job.
+
+**Verified:** builds clean, carries all three indicator classes, and its assembly references
+have the same shape as the hand-built DLL it replaces — ATAS.Indicators and OFT.Rendering, and
+no `PresentationCore`. **Not verified in ATAS X itself:** nobody has loaded this file into the
+platform. It ships on that basis, deliberately, because the Ladder has been blank since Monday.
+
+**The classic bundle no longer carries a `mac/` folder.** It held a `.dll` with the identical
+filename to the Windows one, three directories down, and people copied that one and got an
+empty chart with no error. macOS has its own download and its own install folder; the
+INSTALL.txt in the classic bundle now says so in the first lines.
 
 ---
 

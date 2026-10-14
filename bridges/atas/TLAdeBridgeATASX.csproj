@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- ATAS X (Avalonia): stessi sorgenti della build classica, una sola costante.
+       net10.0 senza WPF, un DLL che gira su Windows e macOS.
+       Vedi README_ATASX_EN.md per la tabella delle differenze. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>TLAdeBridgeATASX</AssemblyName>
+    <RootNamespace>ATAS.Indicators.Technical</RootNamespace>
+    <DefineConstants>$(DefineConstants);ATASX</DefineConstants>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <BaseOutputPath>bin-atasx\</BaseOutputPath>
+    <BaseIntermediateOutputPath>obj-atasx\</BaseIntermediateOutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="tlade-bridges-main\**\*.cs" />
+    <Compile Remove="Other platforms engines\**\*.cs" />
+    <Compile Remove="bin\**\*.cs" />
+    <Compile Remove="bin-atasx\**\*.cs" />
+    <Compile Remove="obj\**\*.cs" />
+    <Compile Remove="obj-atasx\**\*.cs" />
+    <Compile Remove="mac\**\*.cs" />
+    <Compile Remove="original\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- DashStyle e StringAlignment sono inoltrati qui fuori da net10.0 -->
+    <PackageReference Include="System.Drawing.Common" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="ATAS.Indicators"><HintPath>C:\Program Files (x86)\ATAS Platform\ATAS.Indicators.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ATAS.Indicators.Technical"><HintPath>C:\Program Files (x86)\ATAS Platform\ATAS.Indicators.Technical.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ATAS.Indicators.Other"><HintPath>C:\Program Files (x86)\ATAS Platform\ATAS.Indicators.Other.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ATAS.DataFeedsCore"><HintPath>C:\Program Files (x86)\ATAS Platform\ATAS.DataFeedsCore.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="ATAS.Types"><HintPath>C:\Program Files (x86)\ATAS Platform\ATAS.Types.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OFT.Rendering"><HintPath>C:\Program Files (x86)\ATAS Platform\OFT.Rendering.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OFT.Core"><HintPath>C:\Program Files (x86)\ATAS Platform\OFT.Core.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="OFT.Attributes"><HintPath>C:\Program Files (x86)\ATAS Platform\OFT.Attributes.dll</HintPath><Private>false</Private></Reference>
+    <Reference Include="Utils.Common"><HintPath>C:\Program Files (x86)\ATAS Platform\Utils.Common.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+</Project>

@@ -38,14 +38,15 @@ jobs:
           # build loudly instead of quietly shipping a bundle with a hole in it.
           # (14 October 2026)
           A=pkg/TLADe-ATAS-Bundle
-          mkdir -p "$A/mac" "$A/python-bridge" "$A/source"
+          # No mac/ folder in here. It carried a .dll with the IDENTICAL filename to the
+          # Windows one, three levels down, and people copied that one and got a chart
+          # with nothing on it and no error to explain why. macOS has its own download,
+          # TLADe-ATASX.zip, whose DLL has a different name and its own install folder.
+          # The INSTALL.txt in this bundle says so.
+          mkdir -p "$A/python-bridge" "$A/source"
           cp bridges/atas/INSTALL.txt                                     "$A/"
           cp bridges/atas/README.md                                       "$A/"
           cp bridges/atas/bin/Release/net10.0-windows/TLAdeBridgeATAS.dll "$A/"
-          cp bridges/atas/mac/bin/Release/TLAdeBridgeATAS.dll             "$A/mac/"
-          cp bridges/atas/mac/README.md                                   "$A/mac/"
-          cp bridges/atas/mac/start.command                               "$A/mac/"
-          cp bridges/atas/mac/tlade_bridge_atas.py                        "$A/mac/"
           cp bridges/atas/start.bat                                       "$A/python-bridge/"
           cp "bridges/atas/TLADe Autostart.bat"                           "$A/python-bridge/"
           cp bridges/atas/tlade_bridge_atas.py                            "$A/python-bridge/"
@@ -61,6 +62,21 @@ jobs:
           zip -r ../TLADe-NT8-Bridge.zip     TLADe-NT8-Bridge
           zip -r ../TLADe-ATAS-Bundle.zip    TLADe-ATAS-Bundle
           cd ..
+          # ATAS X (Avalonia: Windows and macOS, one file) is its own download: the DLL
+          # has a different name and goes into %APPDATA%\ATAS X\Indicators, not the
+          # classic folder. Built from the committed artifact, like the MotiveWave jar —
+          # it compiles against the assemblies of an ATAS install, which are not in this
+          # repository, so the CI cannot produce it from source.
+          #
+          # It was NOT in this list and was uploaded by hand: it sat on the 2 September
+          # build for six weeks, and from 12 October the Quantum Field Ladder inside it
+          # was drawing nothing at all while nobody could see that the download was stale.
+          # Third time this exact failure bit us — TLADeGexDashboardNT.zip in October, the
+          # MotiveWave jar on the 13th, this one now. (14 October 2026)
+          mkdir -p pkg-atasx/TLADe-ATASX
+          cp bridges/atas/bin-atasx/Release/TLAdeBridgeATASX.dll pkg-atasx/TLADe-ATASX/
+          cp bridges/atas/README_ATASX_EN.md                     pkg-atasx/TLADe-ATASX/README.md
+          ( cd pkg-atasx && zip -r "$GITHUB_WORKSPACE/TLADe-ATASX.zip" TLADe-ATASX )
           # The NT8 indicator on its own, zipped from inside its folder so the
           # paths stay Indicators/... and Info.xml, which is what NinjaTrader's
           # importer expects.
@@ -138,6 +154,7 @@ jobs:
             TLADe-NT8-Bridge.zip
             TLADeGexDashboardNT.zip
             TLADe-ATAS-Bundle.zip
+            TLADe-ATASX.zip
             TLADe-AllBridges.zip
             TLADeGexDashboard.jar
           make_latest: true

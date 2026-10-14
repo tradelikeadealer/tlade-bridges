@@ -49,7 +49,13 @@ using System.IO;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+#if ATASX
+// ATAS X e' Avalonia, non WPF: i colori delle impostazioni sono System.Drawing.Color.
+// Un sorgente solo per le due build, la differenza e' questa costante. (README_ATASX_EN.md)
+using Color = System.Drawing.Color;
+#else
 using System.Windows.Media;
+#endif
 using ATAS.Indicators;
 using OFT.Rendering.Context;
 using OFT.Rendering.Settings;
@@ -67,6 +73,24 @@ namespace ATAS.Indicators.Technical
         // ──────────────────────────────────────────────────────────────────────
         //  STATE
         // ──────────────────────────────────────────────────────────────────────
+
+#if ATASX
+        private static Color Rgb(byte r, byte g, byte b) => Color.FromArgb(r, g, b);
+        private static class Named
+        {
+            public static Color White  => Color.White;
+            public static Color Black  => Color.Black;
+            public static Color Orange => Color.Orange;
+        }
+#else
+        private static Color Rgb(byte r, byte g, byte b) => Color.FromRgb(r, g, b);
+        private static class Named
+        {
+            public static Color White  => Colors.White;
+            public static Color Black  => Colors.Black;
+            public static Color Orange => Colors.Orange;
+        }
+#endif
 
         private static readonly HttpClient _http = new HttpClient
         {
@@ -328,7 +352,7 @@ namespace ATAS.Indicators.Technical
         public bool LabelInheritLineColor { get; set; } = true;
 
         [Display(Name = "Label text color (when not inheriting)", GroupName = "5. Style", Order = 8)]
-        public Color LabelTextColor { get; set; } = Colors.White;
+        public Color LabelTextColor { get; set; } = Named.White;
 
         [Display(Name = "Label background opacity (0-255)", GroupName = "5. Style", Order = 9)]
         [Range(0, 255)]
@@ -339,10 +363,10 @@ namespace ATAS.Indicators.Technical
         public bool LabelBgPositional { get; set; } = false;
 
         [Display(Name = "Label background - above spot", GroupName = "5. Style", Order = 11)]
-        public Color LabelBgAbove { get; set; } = Color.FromRgb(0xdc, 0x26, 0x26); // brighter red
+        public Color LabelBgAbove { get; set; } = Rgb(0xdc, 0x26, 0x26); // brighter red
 
         [Display(Name = "Label background - below spot", GroupName = "5. Style", Order = 12)]
-        public Color LabelBgBelow { get; set; } = Color.FromRgb(0x16, 0xa3, 0x4a); // brighter green
+        public Color LabelBgBelow { get; set; } = Rgb(0x16, 0xa3, 0x4a); // brighter green
 
         [Display(Name = "Scale wall lines by magnitude", GroupName = "5. Style", Order = 4,
                  Description = "CW/PW: line length is proportional to magnitude. System levels (ZG/MP/EM/VB/structure) stay full width.")]
@@ -442,10 +466,83 @@ namespace ATAS.Indicators.Technical
                 if (!wanted) continue;
                 bool up = c2 < al.Price && c1 >= al.Price, down = c2 > al.Price && c1 <= al.Price;
                 if (!up && !down) continue;
-                try { AddAlert("alert1", InstrumentInfo?.Instrument ?? "", $"TLADe {al.Name} crossed {(up ? "UP" : "DOWN")}", Colors.Black, Colors.Orange); }
+#if ATASX
+                try { AddAlertCrossPlatform($"TLADe {al.Name} crossed {(up ? "UP" : "DOWN")}"); }
                 catch (Exception ex) { Log($"alert EX: {ex.Message}"); }
+#else
+                try { AddAlert("alert1", InstrumentInfo?.Instrument ?? "", $"TLADe {al.Name} crossed {(up ? "UP" : "DOWN")}", Named.Black, Named.Orange); }
+                catch (Exception ex) { Log($"alert EX: {ex.Message}"); }
+#endif
             }
         }
+
+#if ATASX
+        // AddAlert e' l'UNICA cosa che lega questo indicatore a WPF: negli assembly di
+        // ATAS classico i due colori dell'alert sono System.Windows.Media.Color, e quella
+        // firma su net10.0 non e' esprimibile. ATAS X non ha WPF (verificato sui riferimenti
+        // della build di Mihai: nessun PresentationCore), ma i suoi assembly non li abbiamo
+        // per compilare. Quindi la firma la risolve la PIATTAFORMA a runtime: si cerca
+        // AddAlert per nome, si guarda di che tipo vuole i colori e si costruiscono quelli.
+        // Cosi' il sorgente resta uno per entrambe le build e non serve nessun assembly di
+        // ATAS X per produrre il DLL. Se nessuna firma combacia non si lancia niente: si
+        // scrive nel log e si va avanti — un alert mancato non vale un indicatore che crepa.
+        // (14/10/2026)
+        private void AddAlertCrossPlatform(string message)
+        {
+            try
+            {
+                var inst = InstrumentInfo?.Instrument ?? "";
+                foreach (var mi in GetType().GetMethods(System.Reflection.BindingFlags.Instance
+                                                      | System.Reflection.BindingFlags.Public
+                                                      | System.Reflection.BindingFlags.NonPublic
+                                                      | System.Reflection.BindingFlags.FlattenHierarchy))
+                {
+                    if (mi.Name != "AddAlert") continue;
+                    var ps = mi.GetParameters();
+                    if (ps.Length == 5 && ps[0].ParameterType == typeof(string))
+                    {
+                        var bg = MakePlatformColor(ps[3].ParameterType, 0x00, 0x00, 0x00);
+                        var fg = MakePlatformColor(ps[4].ParameterType, 0xf9, 0x73, 0x16);
+                        if (bg == null || fg == null) continue;
+                        mi.Invoke(this, new object[] { "alert1", inst, message, bg, fg });
+                        return;
+                    }
+                }
+                foreach (var mi in GetType().GetMethods(System.Reflection.BindingFlags.Instance
+                                                      | System.Reflection.BindingFlags.Public
+                                                      | System.Reflection.BindingFlags.NonPublic
+                                                      | System.Reflection.BindingFlags.FlattenHierarchy))
+                {
+                    if (mi.Name != "AddAlert") continue;
+                    var ps = mi.GetParameters();
+                    if (ps.Length == 3 && ps[0].ParameterType == typeof(string)
+                                       && ps[1].ParameterType == typeof(string)
+                                       && ps[2].ParameterType == typeof(string))
+                    {
+                        mi.Invoke(this, new object[] { "alert1", inst, message });
+                        return;
+                    }
+                }
+                Log("alert: nessuna firma AddAlert riconosciuta su questa piattaforma");
+            }
+            catch (Exception ex) { Log($"alert reflection EX: {ex.Message}"); }
+        }
+
+        private static object MakePlatformColor(Type t, byte r, byte g, byte b)
+        {
+            if (t == typeof(Color)) return Rgb(r, g, b);
+            foreach (var name in new[] { "FromArgb", "FromRgb" })
+            {
+                var m3 = t.GetMethod(name, new[] { typeof(byte), typeof(byte), typeof(byte) });
+                if (m3 != null) return m3.Invoke(null, new object[] { r, g, b });
+                var mi3 = t.GetMethod(name, new[] { typeof(int), typeof(int), typeof(int) });
+                if (mi3 != null) return mi3.Invoke(null, new object[] { (int)r, (int)g, (int)b });
+                var m4 = t.GetMethod(name, new[] { typeof(byte), typeof(byte), typeof(byte), typeof(byte) });
+                if (m4 != null) return m4.Invoke(null, new object[] { (byte)255, r, g, b });
+            }
+            return null;
+        }
+#endif
 
         protected override void OnCalculate(int bar, decimal value)
         {

@@ -29,7 +29,13 @@ using System.Globalization;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
+#if ATASX
+// ATAS X e' Avalonia, non WPF: i colori delle impostazioni sono System.Drawing.Color.
+// Un sorgente solo per le due build, la differenza e' questa costante. (README_ATASX_EN.md)
+using Color = System.Drawing.Color;
+#else
 using System.Windows.Media;
+#endif
 using ATAS.Indicators;
 using OFT.Rendering.Context;
 using OFT.Rendering.Settings;
@@ -59,6 +65,24 @@ namespace ATAS.Indicators.Technical
         private static readonly string _logPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
             "ATAS", "tlade_quantum.log");
+
+#if ATASX
+        private static Color Rgb(byte r, byte g, byte b) => Color.FromArgb(r, g, b);
+        private static class Named
+        {
+            public static Color White  => Color.White;
+            public static Color Black  => Color.Black;
+            public static Color Orange => Color.Orange;
+        }
+#else
+        private static Color Rgb(byte r, byte g, byte b) => Color.FromRgb(r, g, b);
+        private static class Named
+        {
+            public static Color White  => Colors.White;
+            public static Color Black  => Colors.Black;
+            public static Color Orange => Colors.Orange;
+        }
+#endif
 
         private readonly CultureInfo _inv = CultureInfo.InvariantCulture;
         private readonly object _lvlLock = new object();
@@ -153,7 +177,7 @@ namespace ATAS.Indicators.Technical
         // Lo Zero Gamma e' bianco di default su ogni superficie, e il colore si cambia da qui:
         // chi lavora su sfondo chiaro se lo mette grigio da se'. (Stefano, 14/10/2026)
         [Display(Name = "Zero Gamma color", GroupName = "4. Colors", Order = 0)]
-        public Color ZeroGammaColor { get; set; } = Color.FromRgb(0xff, 0xff, 0xff);
+        public Color ZeroGammaColor { get; set; } = Rgb(0xff, 0xff, 0xff);
 
         // MP / EM / Vol Band / DF / CM non sono ne' magneti ne' muri: non sono campo. Se accesi,
         // si disegnano come linee con gli stessi colori e stili della GEX Dashboard. Spenti di
@@ -162,17 +186,17 @@ namespace ATAS.Indicators.Technical
         public bool ShowSystemLines { get; set; } = false;
 
         [Display(Name = "Magnet color (ZG)", GroupName = "4. Colors", Order = 1)]
-        public Color MagnetColor { get; set; } = Color.FromRgb(0x22, 0xd3, 0xee); // cyan
+        public Color MagnetColor { get; set; } = Rgb(0x22, 0xd3, 0xee); // cyan
 
         [Display(Name = "Wall color (CW/PW)", GroupName = "4. Colors", Order = 2)]
-        public Color WallColor { get; set; } = Color.FromRgb(0xec, 0x4d, 0xc4); // magenta
+        public Color WallColor { get; set; } = Rgb(0xec, 0x4d, 0xc4); // magenta
 
         [Display(Name = "Label text inherits band color", GroupName = "4. Colors", Order = 3,
                  Description = "Default ON. Uncheck to force a custom label text color.")]
         public bool LabelInheritBandColor { get; set; } = true;
 
         [Display(Name = "Label text color (when not inheriting)", GroupName = "4. Colors", Order = 4)]
-        public Color LabelTextColor { get; set; } = Colors.White;
+        public Color LabelTextColor { get; set; } = Named.White;
 
         [Display(Name = "Label background opacity (0-255)", GroupName = "4. Colors", Order = 5)]
         [Range(0, 255)]
@@ -182,10 +206,10 @@ namespace ATAS.Indicators.Technical
         public bool LabelBgPositional { get; set; } = false;
 
         [Display(Name = "Label background - above spot", GroupName = "4. Colors", Order = 7)]
-        public Color LabelBgAbove { get; set; } = Color.FromRgb(0xdc, 0x26, 0x26);
+        public Color LabelBgAbove { get; set; } = Rgb(0xdc, 0x26, 0x26);
 
         [Display(Name = "Label background - below spot", GroupName = "4. Colors", Order = 8)]
-        public Color LabelBgBelow { get; set; } = Color.FromRgb(0x16, 0xa3, 0x4a);
+        public Color LabelBgBelow { get; set; } = Rgb(0x16, 0xa3, 0x4a);
 
         // ──────────────────────────────────────────────────────────────────────
         //  CONSTRUCTOR

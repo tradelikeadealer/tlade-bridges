@@ -10,8 +10,9 @@ Ladder, Bridge). Everything else in here is optional and explained at
 the bottom. If a step does not match what you see on screen, stop and
 reply to us instead of guessing - we answer every message.
 
-Windows users: ignore the "mac" folder. It holds a file with the exact
-same name, for Apple computers, and it will not work on Windows.
+On a Mac? This is not your download. ATAS X on macOS uses a different
+file, TLAdeBridgeATASX.dll, and a different folder. Get TLADe-ATASX.zip from
+the same download page and follow the readme inside it.
 
 
 STEP 1 - Close ATAS completely
@@ -159,10 +160,6 @@ Send us those last lines and we can tell you exactly what is happening.
 What else is in this zip
 ========================
 You do not need any of it to see the levels on your chart.
-
-  mac/            the same indicators for ATAS X on macOS. The .dll in
-                  there has the SAME NAME as the Windows one and will
-                  not load on Windows - do not mix them up.
 
   python-bridge/  sends your ATAS price INTO the TLADe web terminal.
                   Needs Python running (start.bat). Skip it unless you

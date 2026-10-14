@@ -14,6 +14,10 @@
     <Compile Remove="Other platforms engines\**\*.cs" />
     <Compile Remove="bin\**\*.cs" />
     <Compile Remove="obj\**\*.cs" />
+    <!-- la build ATAS X ha cartelle sue: senza queste due righe il progetto Windows
+         compila il suo AssemblyInfo generato e muore su attributi duplicati -->
+    <Compile Remove="bin-atasx\**\*.cs" />
+    <Compile Remove="obj-atasx\**\*.cs" />
     <Compile Remove="mac\**\*.cs" />
     <!-- as-delivered reference copy: same classes as the live files, so compiling
          both yields duplicate-member errors. Kept for diffing, never built. -->

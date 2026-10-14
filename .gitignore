@@ -17,6 +17,9 @@ venv/
 
 # .NET build artifacts — pre-built DLLs are tracked explicitly
 obj/
+# cartella intermedia della build ATAS X (il suo DLL in bin-atasx/ invece e' tracciato,
+# come il jar di MotiveWave: la CI non puo' compilarlo, non ha gli assembly di ATAS)
+obj-atasx/
 *.pdb
 *.deps.json
 bridges/atas/state_atas.json
