@@ -66,6 +66,18 @@ namespace ATAS.Indicators.Technical
 
         private string   _rawData            = "";
         private bool     _isDelayedMode      = false;
+        private double   _etfRatio           = 0.0;   // da R: — rapporto indice->ETF
+
+        // Quali strike sono MAGNETI: arriva dalla riga B: del profilo, deciso dal motore.
+        // La Ladder NON lo ricalcola: ENGINE_CORRECTIONS_LOG #009, "mai inferire".
+        private readonly HashSet<int> _magnets = new HashSet<int>();
+
+        // Colori e stili dei livelli di sistema, identici alla GEX Dashboard (sue costanti).
+        private static readonly DColor C_MP = DColor.FromArgb(0xef, 0x44, 0x44),
+            C_EM    = DColor.FromArgb(0x3b, 0x82, 0xf6),
+            C_VB    = DColor.FromArgb(0x9c, 0xa3, 0xaf),
+            C_CHARM = DColor.FromArgb(0xf9, 0x73, 0x16),
+            C_DFLIP = DColor.FromArgb(0xf5, 0x9e, 0x0b);
         private int      _lastFetchMinuteEt  = -1;
         private DateTime _lastFetchUtc       = DateTime.MinValue;
         private bool     _initialFetchTried  = false;
@@ -92,7 +104,7 @@ namespace ATAS.Indicators.Technical
 
         [Display(Name = "ES↔SPX spread (auto from S:)", GroupName = "2. Layout", Order = 2)]
         [Range(0, 200)]
-        public double EsSpxSpread { get; set; } = 24.0;
+        public double EsSpxSpread { get; set; } = 0.0;   // 0 = non noto: strike come sono finché non arriva S:
 
         [Display(Name = "NQ↔NDX spread", GroupName = "2. Layout", Order = 3)]
         [Range(0, 200)]
@@ -137,6 +149,17 @@ namespace ATAS.Indicators.Technical
         [Display(Name = "Font size label", GroupName = "3. Render", Order = 7)]
         [Range(7, 16)]
         public int LabelFontSize { get; set; } = 9;
+
+        // Lo Zero Gamma e' bianco di default su ogni superficie, e il colore si cambia da qui:
+        // chi lavora su sfondo chiaro se lo mette grigio da se'. (Stefano, 14/10/2026)
+        [Display(Name = "Zero Gamma color", GroupName = "4. Colors", Order = 0)]
+        public Color ZeroGammaColor { get; set; } = Color.FromRgb(0xff, 0xff, 0xff);
+
+        // MP / EM / Vol Band / DF / CM non sono ne' magneti ne' muri: non sono campo. Se accesi,
+        // si disegnano come linee con gli stessi colori e stili della GEX Dashboard. Spenti di
+        // default, perche' la Ladder e' il campo quantistico e basta. (Stefano, 14/10/2026)
+        [Display(Name = "Show system levels as lines (MP/EM/VB/DF/CM)", GroupName = "3. Render", Order = 8)]
+        public bool ShowSystemLines { get; set; } = false;
 
         [Display(Name = "Magnet color (ZG)", GroupName = "4. Colors", Order = 1)]
         public Color MagnetColor { get; set; } = Color.FromRgb(0x22, 0xd3, 0xee); // cyan
@@ -330,7 +353,7 @@ namespace ATAS.Indicators.Technical
         {
             if (string.IsNullOrEmpty(raw))
             {
-                lock (_lvlLock) _levels.Clear();
+                lock (_lvlLock) { _levels.Clear(); _magnets.Clear(); }
                 Log("PARSED cleared (empty input)");
                 return;
             }
@@ -350,17 +373,53 @@ namespace ATAS.Indicators.Technical
                 }
             }
 
+            // R: — rapporto indice->ETF (SPX->SPY ~10, NDX->QQQ ~41). Va tolto QUI, prima
+            // del test su "L:". Dal 12/10/2026 il payload lo porta sempre: senza questo
+            // blocco la sezione dei livelli comincia con "R:...", StartsWith("L:") fallisce
+            // e la Ladder resta vuota senza un errore. La Dashboard lo fa dal 3.5.0, qui
+            // era rimasto fuori. (14/10/2026)
+            if (raw.StartsWith("R:", StringComparison.Ordinal))
+            {
+                int rEnd = raw.IndexOf('|');
+                if (rEnd > 2)
+                {
+                    if (double.TryParse(raw.Substring(2, rEnd - 2), NumberStyles.Float, _inv, out var rr) && rr > 0)
+                        _etfRatio = rr;
+                    raw = raw.Substring(rEnd + 1);
+                }
+            }
+
             string levelsData = "";
+            string profileData = "";
             int pPos = raw.IndexOf("|P:", StringComparison.Ordinal);
             if (pPos >= 0)
             {
                 var before = raw.Substring(0, pPos);
                 if (before.StartsWith("L:", StringComparison.Ordinal))
                     levelsData = before.Substring(2);
+                profileData = raw.Substring(pPos + 3);
             }
             else if (raw.StartsWith("L:", StringComparison.Ordinal))
             {
                 levelsData = raw.Substring(2);
+            }
+
+            // B: — gli strike che il motore ha dichiarato MAGNETI. Viaggia come riga del
+            // profilo (come T:) perche' in testa alla stringa le piattaforme pretendono "S:",
+            // e ogni parser scarta una riga di profilo il cui primo campo non e' un numero.
+            // La Ladder non decide: legge. (14/10/2026)
+            var freshMagnets = new HashSet<int>();
+            if (profileData.Length > 0)
+            {
+                foreach (var row in profileData.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (!row.StartsWith("B:", StringComparison.Ordinal)) continue;
+                    int comma = row.IndexOf(',');
+                    var list = comma > 2 ? row.Substring(2, comma - 2) : row.Substring(2);
+                    foreach (var tok in list.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+                        if (int.TryParse(tok, NumberStyles.Integer, _inv, out var mk)) freshMagnets.Add(mk);
+                    break;
+                }
             }
             if (!string.IsNullOrEmpty(levelsData))
             {
@@ -387,8 +446,12 @@ namespace ATAS.Indicators.Technical
                 Log($"PARSED skipped: 0 levels from {raw.Length} chars (input incomplete/invalid) — keeping existing");
                 return;
             }
-            lock (_lvlLock) { _levels.Clear(); _levels.AddRange(fresh); }
-            Log($"PARSED levels={fresh.Count}");
+            lock (_lvlLock)
+            {
+                _levels.Clear(); _levels.AddRange(fresh);
+                _magnets.Clear(); foreach (var mk in freshMagnets) _magnets.Add(mk);
+            }
+            Log($"PARSED levels={fresh.Count} magnets={freshMagnets.Count}");
         }
 
         // ──────────────────────────────────────────────────────────────────────
@@ -427,10 +490,19 @@ namespace ATAS.Indicators.Technical
                 double spot = GetLiveSpot();
                 if (spot <= 0) return;
 
-                // Rank by distance from spot, take top N
-                var ranked = new List<RankedLevel>(snap.Count);
+                // Tre secchi. Il campo quantistico sono i MURI: sono loro a contare per
+                // "Max levels", che altrimenti veniva consumato da Max Pain e vol band.
+                // Lo ZG non e' un muro ed e' sempre visibile, i livelli di riferimento
+                // dipendono dal flag. (14/10/2026)
+                LevelEntry zgLvl = default; bool hasZg = false;
+                var sysLvls = new List<LevelEntry>();
+                var ranked  = new List<RankedLevel>(snap.Count);
                 foreach (var lvl in snap)
                 {
+                    var t = lvl.Type ?? "";
+                    if (IsNotAPrice(t)) continue;
+                    if (t == "ZG") { zgLvl = lvl; hasZg = true; continue; }
+                    if (IsSystemLine(t)) { sysLvls.Add(lvl); continue; }
                     var y = ConvertPrice(lvl.RawStrike);
                     ranked.Add(new RankedLevel { Lvl = lvl, ConvertedY = y, DistToSpot = Math.Abs(y - spot) });
                 }
@@ -453,7 +525,8 @@ namespace ATAS.Indicators.Technical
                 {
                     var rl = ranked[i];
                     var lvl = rl.Lvl;
-                    bool isMagnet = lvl.Type == "ZG";
+                    bool isMagnet;
+                    lock (_lvlLock) isMagnet = _magnets.Contains((int)Math.Round(lvl.RawStrike));
                     Color baseWpf = isMagnet ? MagnetColor : WallColor;
                     DColor baseC = DColor.FromArgb(baseWpf.A, baseWpf.R, baseWpf.G, baseWpf.B);
 
@@ -522,11 +595,58 @@ namespace ATAS.Indicators.Technical
                             new DRect(lx, ly, (int)sz.Width + 4, (int)sz.Height), _sfL);
                     }
                 }
+
+                // ── Linee di riferimento (solo passata Final) ──
+                // Lo Zero Gamma si disegna SEMPRE: e' il perno del campo, non un livello fra
+                // gli altri, e non sta dietro un interruttore. Il resto dipende dal flag.
+                if (wantTopHere)
+                {
+                    if (hasZg)
+                    {
+                        var zgCol = DColor.FromArgb(ZeroGammaColor.A, ZeroGammaColor.R, ZeroGammaColor.G, ZeroGammaColor.B);
+                        DrawRefLine(ctx, x1, x2, ConvertPrice(zgLvl.RawStrike), zgCol,
+                                    UserLineStyleOrSolid(), SystemName("ZG"), zgLvl.RawStrike);
+                    }
+                    if (ShowSystemLines)
+                    {
+                        foreach (var lvl in sysLvls)
+                        {
+                            var t = lvl.Type ?? "";
+                            DrawRefLine(ctx, x1, x2, ConvertPrice(lvl.RawStrike), SystemColor(t),
+                                        SystemDash(t), SystemName(t), lvl.RawStrike);
+                        }
+                    }
+                }
             }
             catch (Exception ex)
             {
                 Log($"OnRender EX: {ex.GetType().Name}: {ex.Message}");
             }
+        }
+
+        // Lo stile della linea dello ZG segue quello scelto dall'utente per le linee centrali;
+        // in mancanza, continua. Le linee di sistema hanno i loro stili fissi, come la Dashboard.
+        private System.Drawing.Drawing2D.DashStyle UserLineStyleOrSolid()
+            => System.Drawing.Drawing2D.DashStyle.Solid;
+
+        // Una linea di riferimento: riga piena sul grafico + etichetta nel colore della riga,
+        // come fa la GEX Dashboard. Non e' una banda: questi livelli non sono campo.
+        private void DrawRefLine(RenderContext ctx, int x1, int x2, double convertedY,
+                                 DColor col, System.Drawing.Drawing2D.DashStyle dash,
+                                 string name, double rawStrike)
+        {
+            int y = ChartInfo.GetYByPrice((decimal)convertedY, false);
+            ctx.DrawLine(new RenderPen(col, CenterLineWidth, dash), x1, y, x2, y);
+            if (!ShowLabels) return;
+            string txt = $" {FormatPrice(rawStrike)} {name} ";
+            var sz = ctx.MeasureString(txt, _fn);
+            int lx = x2 - (int)sz.Width - 6;
+            int ly = y - (int)sz.Height - 1;
+            byte ba = (byte)Math.Clamp(LabelBgAlpha, 0, 255);
+            var bg = DColor.FromArgb(ba,
+                Math.Min(col.R / 4 + 6, 255), Math.Min(col.G / 4 + 6, 255), Math.Min(col.B / 4 + 6, 255));
+            ctx.FillRectangle(bg, new DRect(lx - 2, ly - 1, (int)sz.Width + 6, (int)sz.Height + 2));
+            ctx.DrawString(txt, _fn, col, new DRect(lx, ly, (int)sz.Width + 4, (int)sz.Height), _sfL);
         }
 
         private void DrawStatus(RenderContext ctx, int count)
@@ -568,6 +688,56 @@ namespace ATAS.Indicators.Technical
             catch { return 0; }
         }
 
+        // Livelli di riferimento: non sono campo quantistico. Si disegnano come linee, con i
+        // colori e gli stili della GEX Dashboard, solo se ShowSystemLines e' acceso.
+        private static bool IsSystemLine(string t) =>
+            t == "MP" || t == "EH" || t == "EL" || t == "EHR" || t == "ELR" ||
+            t == "VH" || t == "VL" || t == "DF" || t == "CM";
+
+        // EMR non e' un prezzo: e' la LARGHEZZA dell'Expected Move RTH, e va ancorata
+        // all'apertura delle 09:30 dall'utente. Disegnarla come livello mette una riga
+        // a sessanta punti dal nulla. Fuori da tutto. (14/10/2026)
+        private static bool IsNotAPrice(string t) => t == "EMR";
+
+        private static DColor SystemColor(string t)
+        {
+            if (t == "MP") return C_MP;
+            if (t == "EH" || t == "EL" || t == "EHR" || t == "ELR") return C_EM;
+            if (t == "VH" || t == "VL") return C_VB;
+            if (t == "CM") return C_CHARM;
+            if (t == "DF") return C_DFLIP;
+            return C_VB;
+        }
+
+        // Stessi stili della Dashboard (suo StyleFor): CM continuo, MP e vol band punteggiati,
+        // EM e Delta Flip tratteggiati.
+        private static System.Drawing.Drawing2D.DashStyle SystemDash(string t)
+        {
+            if (t == "CM") return System.Drawing.Drawing2D.DashStyle.Solid;
+            if (t == "MP" || t == "VH" || t == "VL") return System.Drawing.Drawing2D.DashStyle.Dot;
+            if (t == "EH" || t == "EL" || t == "EHR" || t == "ELR" || t == "DF") return System.Drawing.Drawing2D.DashStyle.Dash;
+            return System.Drawing.Drawing2D.DashStyle.Solid;
+        }
+
+        // Nomi identici a quelli della Dashboard (suo NameFor).
+        private static string SystemName(string t)
+        {
+            switch (t)
+            {
+                case "ZG":  return "ZERO GAMMA";
+                case "MP":  return "Max Pain";
+                case "EH":  return "EM High Globex";
+                case "EL":  return "EM Low Globex";
+                case "EHR": return "EM High RTH";
+                case "ELR": return "EM Low RTH";
+                case "VH":  return "Vol High";
+                case "VL":  return "Vol Low";
+                case "CM":  return "Charm Magnet";
+                case "DF":  return "Delta Flip";
+                default:    return t;
+            }
+        }
+
         private bool IsNqFamily()
         {
             var t = (DisplayTicker ?? "").ToUpperInvariant();
@@ -597,13 +767,22 @@ namespace ATAS.Indicators.Technical
             // written). Pass the raw strike through for futures tickers; subtracting
             // the spread again would offset levels by ~19 points vs the TLADe terminal.
             double cv;
+            // Lo spread arriva da S: e porta la base della famiglia della stringa
+            // (ES-SPX o NQ-NDX). Il rapporto arriva da R:. Fino al 14/10/2026 qui
+            // c'erano 10 e 40 scritti nel codice e lo spread non veniva sottratto:
+            // SPX e NDX uscivano di uno spread intero, SPY di 7,5 punti e QQQ di 26.
+            double sp       = EffectiveEsSpread;
+            double ratio    = _etfRatio > 0 ? _etfRatio : 40.0;
+            // La banda evita il caso incrociato - stringa NQ caricata mentre si guarda
+            // SPY, dove si applicherebbe 41 a SPY. Fuori banda si ripiega su 10.
+            double spyRatio = (_etfRatio >= 9.0 && _etfRatio <= 12.0) ? _etfRatio : 10.0;
             switch (ResolveTicker())
             {
-                case "SPX": cv = rawStrike; break;
-                case "SPY": cv = rawStrike / 10.0; break;
+                case "SPX": cv = sp <= 0 ? rawStrike : rawStrike - sp; break;
+                case "SPY": cv = sp <= 0 ? rawStrike : (rawStrike - sp) / spyRatio; break;
                 case "ES":  cv = rawStrike; break;                          // already in ES futures space
-                case "NDX": cv = rawStrike; break;
-                case "QQQ": cv = rawStrike / 40.0; break;
+                case "NDX": cv = sp <= 0 ? rawStrike : rawStrike - sp; break;
+                case "QQQ": cv = sp <= 0 ? rawStrike : (rawStrike - sp) / ratio; break;
                 case "NQ":  cv = rawStrike; break;                          // already in NQ futures space
                 default:    cv = rawStrike; break;
             }
