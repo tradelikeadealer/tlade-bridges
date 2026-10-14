@@ -127,7 +127,18 @@ jobs:
           # build we had already pulled, and the release notes above promise "no
           # irrelevant files". The archives stay in the repository, which is what
           # they are for; they just stop being a download. (14 October 2026)
-          for p in _archive_2026-08-28 _archive_2026-09-13 TLADe-ATAS-Bundle TLADe-ATAS-Bundle.zip; do
+          #
+          # The list also drops every `original/` folder and the ATAS `mac/` tree. Those
+          # hold files with the SAME FILENAMES as the live ones - atas/mac/bin/Release/
+          # TLAdeBridgeATAS.dll next to atas/bin/Release/net10.0-windows/TLAdeBridgeATAS.dll,
+          # three `original/TLAde*.cs`, two `tlade_bridge_*.py`, one TLADeGexDashboard.java.
+          # That duplicate DLL is the exact one a subscriber copied, got a chart with
+          # nothing on it and no error to explain why, and spent two days on before
+          # writing to us. It was removed from the ATAS bundle on 14 October and was
+          # still sitting in this one. Per-bridge README.md and start.bat files repeat
+          # too, but each lives in its own clearly named bridge folder and nobody
+          # mistakes one for another - those stay.
+          for p in _archive_2026-08-28 _archive_2026-09-13 TLADe-ATAS-Bundle TLADe-ATAS-Bundle.zip                    atas/mac atas/original motivawe/original ninjatrader/original; do
             if [ ! -e "pkg-all/TLADe-AllBridges/bridges/$p" ]; then
               echo "ERROR: bridges/$p is gone - update this exclusion list"; exit 1
             fi
