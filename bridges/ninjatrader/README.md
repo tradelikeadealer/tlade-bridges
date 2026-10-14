@@ -44,7 +44,14 @@ Restart NinjaTrader or compile custom indicators (right-click in NinjaScript Edi
 
 ### 2. Add indicator to chart
 
-Open an ES or NQ chart in NT8, add the `TLAdeBridge` indicator.
+Open an **ES, MES, NQ or MNQ** chart in NT8, add the `TLAdeBridge` indicator.
+
+Those four instruments are the only ones the bridge accepts, because it sends
+the raw price of the chart it sits on and the terminal expects that price in the
+futures scale. On any other instrument it sends nothing at all and writes one
+line into the NinjaScript Output window naming the symbol it refused. That is
+deliberate: a chart of gold or of SPY would otherwise have published its own
+price under the ticker `ES`.
 
 ### 3. Run the receiver
 
@@ -91,8 +98,21 @@ port 5000. Adding it to a second chart doesn't open a second data channel:
 both instances post to the same `/push_spot` endpoint, so the receiver keeps
 only the latest tick and the second instance looks idle by comparison.
 
-You only need the indicator loaded on **one chart per ticker** (one for ES,
-one for NQ), and that chart **must be a 5-minute chart**: the indicator pushes
+You only need the indicator loaded on **one chart per ticker** — one for the
+S&P (ES or MES) and one for the Nasdaq (NQ or MNQ). The micro contracts count
+as their full-size ticker: MNQ is the Nasdaq, so an MNQ chart and an NQ chart
+are the *same* ticker and loading the indicator on both gains you nothing.
+
+What you must not do is load it on two charts of **different** indices and
+expect both to feed the same ticker. Until 14 October 2026 a bug made that
+unavoidable without knowing it: every instrument except a chart named exactly
+`NQ` was published as `ES`, so an MNQ chart sent the Nasdaq price under the
+S&P ticker. With the indicator also on an ES chart, the terminal received two
+different indices one second apart on one ticker, and the spot visibly
+oscillated — the radar and every spot-anchored drawing re-sliced on each tick.
+If you saw that, update `TLAdeBridge.cs` and recompile.
+
+The chart **must be a 5-minute chart**: the indicator pushes
 the bars of the chart it sits on, and the terminal expects 5-minute bars
 (Bridge Protocol §ib_data). On a 1-minute or tick chart the terminal reads the
 bars at the wrong scale — session engines drift and the chart re-fits on every

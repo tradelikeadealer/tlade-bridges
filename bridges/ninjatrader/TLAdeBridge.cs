@@ -25,6 +25,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         // backfill burst is still in flight (avoids saturating the local
         // socket pool against the Flask receiver).
         private volatile bool backfillFinished = false;
+        // Latches once so the "unsupported instrument" line is printed a single
+        // time instead of on every tick of a chart that will never publish.
+        private bool unsupportedReported = false;
 
         // How many closed bars to push on startup to seed the bridge with
         // history. The terminal expects "at least 2 weeks of 5-minute bars"
@@ -50,6 +53,19 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (BarsInProgress != 0) return;
 
             string ticker = NormalizeTicker();
+
+            // Unsupported instrument: publish nothing rather than publish it as ES.
+            // Said once per instance, not per tick - OnBarUpdate runs on every tick.
+            if (ticker == null)
+            {
+                if (!unsupportedReported)
+                {
+                    unsupportedReported = true;
+                    Print($"[TLAdeBridge] {Instrument.MasterInstrument.Name} is not a supported instrument - "
+                        + "nothing will be sent. Load this indicator on an ES, MES, NQ or MNQ chart.");
+                }
+                return;
+            }
 
             // ── 1. Backfill on first call after data loaded ─────────────────
             // Push the most recent closed bars so the terminal has chart
@@ -152,10 +168,39 @@ namespace NinjaTrader.NinjaScript.Indicators
             Task.Run(() => PostSpot(ticker, price, now));
         }
 
+        /// <summary>
+        /// The chart's instrument, mapped to the only two tickers the bridge can
+        /// publish. Returns null for anything else, and null means PUBLISH NOTHING.
+        ///
+        /// It used to be `sym.StartsWith("NQ") ? "NQ" : "ES"`, which made ES the
+        /// catch-all for every instrument on earth. MasterInstrument.Name for the
+        /// micro Nasdaq is "MNQ", and "MNQ".StartsWith("NQ") is FALSE - so an MNQ
+        /// chart published the Nasdaq price under the ticker "ES". With the bridge
+        /// also loaded on an ES chart, the terminal received 7850 and 30879 one
+        /// second apart on the same ticker: the spot oscillated between two indices
+        /// and every spot-anchored drawing (radar window, above/below split) was
+        /// re-sliced on each tick. A subscriber watched his chart flicker for a day.
+        /// Gold, YM, RTY, any symbol at all did the same thing, silently.
+        /// (Federico, 14 October 2026)
+        ///
+        /// Deliberately NARROWER than the dashboard's mapping in
+        /// TLADeGexDashboardNT.cs, which also accepts SPX/SPY/NDX/QQQ. Do not
+        /// "align" the two: the dashboard DRAWS, and owns the spread and the ETF
+        /// ratio needed to place a cash level on a futures axis. This bridge SENDS
+        /// THE RAW CHART PRICE. A SPY chart trades near 785 and would arrive
+        /// labelled "ES" - wrong by a factor of ten; QQQ by forty-one. Only
+        /// instruments already quoted in the futures scale may pass.
+        ///
+        /// Exact equality, not StartsWith: MasterInstrument.Name is the root symbol
+        /// ("ES", not "ES 12-26"), so equality is precise, and StartsWith("ES")
+        /// would also swallow ESTX50.
+        /// </summary>
         private string NormalizeTicker()
         {
-            string sym = Instrument.MasterInstrument.Name;
-            return sym.StartsWith("NQ") ? "NQ" : "ES";
+            string sym = (Instrument.MasterInstrument.Name ?? "").ToUpperInvariant();
+            if (sym == "NQ" || sym == "MNQ") return "NQ";
+            if (sym == "ES" || sym == "MES") return "ES";
+            return null;
         }
 
         private async Task PostSpot(string ticker, double price, DateTime ts)

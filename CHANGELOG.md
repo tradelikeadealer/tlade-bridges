@@ -142,6 +142,44 @@ it; its levels on an ETF chart keep the old offset.
 
 ---
 
+## NinjaTrader 8 — TLADe local data bridge
+
+This is `TLAdeBridge.cs`, the indicator that feeds your NinjaTrader prices *into* the
+terminal. It is not the GEX Levels indicator and is not needed to see levels on a chart.
+
+### 14 October 2026
+
+**Fixed — a chart of the micro Nasdaq published its price as the S&P.**
+The instrument was mapped with `Name.StartsWith("NQ") ? "NQ" : "ES"`, so ES was the
+catch-all for every instrument that exists. `MasterInstrument.Name` for the micro Nasdaq
+is `MNQ`, and `"MNQ".StartsWith("NQ")` is false: an MNQ chart sent the Nasdaq price under
+the ticker `ES`. With the bridge also loaded on an ES chart — the documented setup, one
+chart per ticker — the terminal received 7850 and 30879 one second apart on a single
+ticker. The spot oscillated between two indices, and because the radar window and the
+above/below split are derived from the spot on every render, the whole drawing was
+re-sliced several times a second. It read as a rendering fault and was not one. Gold, YM,
+RTY, any symbol at all did the same thing, with nothing anywhere to say so.
+
+The map is now an exact allow-list — `ES`, `MES`, `NQ`, `MNQ` — and an instrument outside
+it publishes **nothing**, with one line in the Output window naming the symbol refused.
+
+Equality, not `StartsWith`, and deliberately narrower than the GEX Levels indicator, which
+also accepts SPX/SPY/NDX/QQQ. Two reasons, both measured rather than assumed. NinjaTrader's
+own instrument database on a stock install holds six real instruments whose name begins
+with `ES` — `ESP35`, `ESPORTS`, `ESRX`, `ESS`, `ESTC3`, `ESV` — every one of which a prefix
+test would have published as the S&P; and of 1875 master instruments, none has a space in
+its name, so the bare root is what the property always returns and equality cannot miss.
+The GEX Levels indicator may take a cash symbol because it *draws*, and owns the spread and
+the ETF ratio needed to put a cash level on a futures axis. This bridge sends the raw chart
+price: a SPY chart trades near 785 and would arrive labelled `ES`, wrong by a factor of ten,
+and QQQ by forty-one. The two must not be "aligned".
+
+Reported by a subscriber who had watched his chart flicker for a day, and who had done
+nothing wrong: the README told him to use one chart per ticker, and never said that the
+micro contract was not one of them. It says so now.
+
+---
+
 ## NinjaTrader 8 — TLADe GEX Levels indicator
 
 ### 3.5.1 — 7 October 2026
