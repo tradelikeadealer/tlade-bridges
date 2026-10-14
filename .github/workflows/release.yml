@@ -24,7 +24,22 @@ jobs:
           # a clean "TLADe-X-Bridge/" after extracting (no nested path).
           cp -r bridges/ib            pkg/TLADe-IB-Bridge
           cp -r bridges/rithmic       pkg/TLADe-Rithmic-Bridge
-          cp -r bridges/ninjatrader   pkg/TLADe-NT8-Bridge
+          # NT8 is assembled from a NAMED LIST for the same reason ATAS is, below.
+          # Copying the folder shipped bridges/ninjatrader/original/, whose
+          # TLAdeBridge.cs and tlade_bridge_nt8.py have the SAME FILENAMES as the
+          # live ones - a user who extracted and copied the wrong one got the
+          # as-delivered contributor build, and on 14 October that build still
+          # carried the bug that published every instrument as ES. It also shipped
+          # the GEX Levels indicator and a zip of it, which are their own download
+          # (TLADeGexDashboardNT.zip) and have nothing to do with the local feed.
+          # set -e is on, so a renamed file fails the build instead of quietly
+          # shipping a bundle with a hole in it. (14 October 2026)
+          N=pkg/TLADe-NT8-Bridge
+          mkdir -p "$N"
+          cp bridges/ninjatrader/README.md           "$N/"
+          cp bridges/ninjatrader/UPDATING.md         "$N/"
+          cp bridges/ninjatrader/TLAdeBridge.cs      "$N/"
+          cp bridges/ninjatrader/tlade_bridge_nt8.py "$N/"
           # ATAS is assembled from a NAMED LIST, not copied wholesale. Copying the
           # folder is what shipped the real DLL buried three levels down under
           # bin/Release/net10.0-windows, a second DLL with the identical filename
@@ -103,6 +118,21 @@ jobs:
           # main.zip pattern, and for users who want every bridge at once).
           mkdir -p pkg-all/TLADe-AllBridges
           cp -r bridges     pkg-all/TLADe-AllBridges/
+          # Strip what must never reach a user. These are tracked files, so the
+          # wholesale copy shipped them: two folders of SUPERSEDED builds - among
+          # them _archive_2026-09-13/ninjatrader/TLADeGexDashboardNT.zip, the 13
+          # September build that was WITHDRAWN on 7 October - plus a convenience
+          # copy of the ATAS bundle, which put a zip inside the zip. Anyone who
+          # extracted this and installed out of an _archive_ folder installed a
+          # build we had already pulled, and the release notes above promise "no
+          # irrelevant files". The archives stay in the repository, which is what
+          # they are for; they just stop being a download. (14 October 2026)
+          for p in _archive_2026-08-28 _archive_2026-09-13 TLADe-ATAS-Bundle TLADe-ATAS-Bundle.zip; do
+            if [ ! -e "pkg-all/TLADe-AllBridges/bridges/$p" ]; then
+              echo "ERROR: bridges/$p is gone - update this exclusion list"; exit 1
+            fi
+            rm -rf "pkg-all/TLADe-AllBridges/bridges/$p"
+          done
           cp -r protocol    pkg-all/TLADe-AllBridges/
           cp -r templates   pkg-all/TLADe-AllBridges/
           cp README.md      pkg-all/TLADe-AllBridges/
@@ -120,9 +150,14 @@ jobs:
           cat > RELEASE_BODY.md <<'HEADER'
           Per-bridge installer bundles, auto-built on every commit to `main`.
 
-          Each zip extracts into a single self-contained folder with
-          `start.bat` (Windows) and `start.command` (macOS, where applicable)
-          at the top — no nested directories, no irrelevant files.
+          Each zip extracts into a single self-contained folder — no nested
+          directories, no irrelevant files, and no second copy of a file under
+          the same name.
+
+          The IB and Rithmic bridges start from `start.bat` (Windows) or
+          `start.command` (macOS) at the top of the folder. NinjaTrader and ATAS
+          do not use one: open the `README.md` in the folder, which says exactly
+          what to run and in which order.
 
           | Bridge | Download |
           |---|---|

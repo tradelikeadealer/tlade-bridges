@@ -142,6 +142,41 @@ it; its levels on an ETF chart keep the old offset.
 
 ---
 
+## TradingView — TLADe Quantum Field Ladder
+
+### 6.12.0 — 14 October 2026
+
+**Fixed — Zero Gamma was usually not on the chart at all, and wrong when it was.**
+The terminal sends Zero Gamma with an intensity of 0, because it has no mass. The Ladder
+sorted every level by intensity, descending, and then kept the first `Max Levels / 2` on each
+side of price — so Zero Gamma was always last in its queue and was dropped whenever that side
+held ten or more levels, which on a normal chain is most sessions. The generator's own comment
+described it as "always visible". On the rare chart where it did appear, the Pine took its
+colour from the node type and painted it as a **magenta wall labelled WALL**, indistinguishable
+from an ordinary level: the pivot the whole method is read against, dressed as something else.
+
+Zero Gamma is now recognised by its `ZG` field, kept outside the `Max Levels` budget entirely,
+and drawn **white** — settable, like everywhere else in TLADe — labelled `ZERO GAMMA`. It draws
+as a bare line, with no field around it, which is what it is.
+
+**Fixed — SPY and QQQ levels were off by the daily drift of the ETF ratio.**
+The Ladder divided by a hardcoded 10 for SPY and 40 for QQQ. Those are the conventional ratios;
+the real ones move every day. On 14 October SPX/SPY was 10.033 and NDX/QQQ 41.1 — about 7.5
+points of SPY and 26 of QQQ, on exactly the charts where a level either holds or it does not.
+It now reads `R:<ratio>` from the data string, as the GEX Dashboard Pine has done since 12
+October, and falls back to the old constants when the string carries no `R:`, so an older
+payload still renders.
+
+Both halves needed the terminal side too: the Quantum string now carries `R:` after `S:`.
+The copy of that generator inside the publishing app carried **no prefix at all** — no spread
+either — so a string copied from there left every SPX, SPY, NDX and QQQ level a whole futures
+basis away unless someone had typed the override by hand. Brought to parity.
+
+**Note:** this is a TradingView script, so the fix reaches users only once the updated Pine is
+published on TradingView. Until then the terminal writes `R:` and older Pine versions ignore it.
+
+---
+
 ## NinjaTrader 8 — TLADe local data bridge
 
 This is `TLAdeBridge.cs`, the indicator that feeds your NinjaTrader prices *into* the
@@ -162,6 +197,22 @@ RTY, any symbol at all did the same thing, with nothing anywhere to say so.
 
 The map is now an exact allow-list — `ES`, `MES`, `NQ`, `MNQ` — and an instrument outside
 it publishes **nothing**, with one line in the Output window naming the symbol refused.
+
+**Fixed — two different files called `TLAdeBridge.cs` in the same download.**
+The zip was the folder copied wholesale, so it also carried `original/`, whose `TLAdeBridge.cs`
+and `tlade_bridge_nt8.py` have the **same filenames** as the live ones. Extract, copy the wrong
+one, and you installed the as-delivered contributor build — which until today still published
+every instrument as ES. It is assembled from a named list now, like the ATAS bundle, and carries
+only the four files the local feed needs. The same copy also shipped the GEX Levels indicator and
+a zip of it, which are their own download and have nothing to do with the feed.
+
+**Fixed — `TLADe-AllBridges.zip` shipped two folders of superseded builds.**
+Among them `_archive_2026-09-13/ninjatrader/TLADeGexDashboardNT.zip`: the 13 September build that
+was **withdrawn on 7 October**. Anyone who took the all-in-one bundle and installed out of an
+`_archive_` folder installed an indicator we had already pulled, while the release notes promised
+"no irrelevant files". The archives stay in the repository — that is what they are for — and stop
+being a download. The exclusion list fails the build if one of those paths is ever renamed,
+rather than quietly shipping them again.
 
 Equality, not `StartsWith`, and deliberately narrower than the GEX Levels indicator, which
 also accepts SPX/SPY/NDX/QQQ. Two reasons, both measured rather than assumed. NinjaTrader's
