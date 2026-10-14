@@ -1,0 +1,172 @@
+TLADe - ATAS indicators: install in 4 steps (nothing to compile)
+================================================================
+
+There is ONE file to copy, and it is at the top of this folder:
+
+    TLAdeBridgeATAS.dll
+
+It carries all three TLADe indicators (GEX Dashboard, Quantum Field
+Ladder, Bridge). Everything else in here is optional and explained at
+the bottom. If a step does not match what you see on screen, stop and
+reply to us instead of guessing - we answer every message.
+
+Windows users: ignore the "mac" folder. It holds a file with the exact
+same name, for Apple computers, and it will not work on Windows.
+
+
+STEP 1 - Close ATAS completely
+------------------------------
+File > Exit. Not just the chart window - the whole platform.
+
+ATAS keeps the indicator file locked while it is running. If you copy
+the file with ATAS open, the copy silently fails and you keep running
+the old version. This is the single most common reason an update
+"does not work".
+
+Make sure it is really closed: press Ctrl + Shift + Esc, look for
+OFT.Platform.exe in the list. If it is there, close it.
+
+
+STEP 2 - Unzip
+--------------
+Right-click the zip > Extract All. Do not copy files directly out of
+the zip preview window - extract first.
+
+You now have a folder named TLADe-ATAS-Bundle, with
+TLAdeBridgeATAS.dll sitting right at the top of it. That is the only
+file you need.
+
+
+STEP 3 - Open the folder ATAS loads from, and replace the file
+-------------------------------------------------------------
+Press Win + R, paste this line exactly as it is, press Enter:
+
+    %APPDATA%\ATAS\Indicators
+
+This is the only folder ATAS reads indicators from. If it does not
+exist, create a folder named Indicators there.
+
+In that folder:
+
+  a) If there is already a TLAdeBridgeATAS.dll, DELETE it. Also delete
+     anything like TLAdeBridgeATAS.dll.bak or .old - leftovers make
+     this harder to diagnose.
+
+  b) Copy in the TLAdeBridgeATAS.dll from STEP 2.
+
+  c) Right-click the file you just copied > Properties. If you see a
+     checkbox or button saying "Unblock" at the bottom, tick it and
+     click OK. Windows marks files downloaded from the internet, and a
+     marked file may not load.
+
+When you are done there must be exactly ONE TLAdeBridgeATAS.dll in this
+folder. Other .dll files with long random names belong to other
+indicators - leave them alone.
+
+Note: Documents\ATAS\Scripts is NOT the same folder. A file placed in
+Scripts is never loaded. If you have a TLAdeBridgeATAS.dll sitting
+there from an earlier install, it is doing nothing - delete it.
+
+
+STEP 4 - Open ATAS and add the indicator
+----------------------------------------
+Open ATAS, open a chart, open the Indicators list, type TLADe in the
+search box, and add the one you want:
+
+    TLADe GEX Dashboard          - levels as lines
+    TLADe Quantum Field Ladder   - the same levels as fields
+
+If your chart already had one of them, ATAS re-adds it on its own -
+that is normal.
+
+If nothing called TLADe appears in the search, the file is not where
+ATAS is looking. Go back to STEP 3 and check the folder path.
+
+
+What changed in the Quantum Field Ladder
+========================================
+  - It draws again. It had stopped reading the levels after we added a
+    new field to the data feed, and showed an empty chart with no error.
+
+  - Magnets are back. A level where call and put gamma balance is a
+    magnet and is drawn in cyan; a directional level is a wall and is
+    drawn in magenta. The decision is made by our engine and travels in
+    the data - the indicator reads it, it does not guess.
+
+  - Zero Gamma is a white line, always. You can change the colour in the
+    settings ("Zero Gamma color") if you work on a light background.
+
+  - Max Pain, Expected Move, Vol Bands, Delta Flip and Charm Magnet are
+    not part of the field, so they are OFF by default. Turn on "Show
+    system levels as lines" and they appear as lines, with the same
+    colours and styles the GEX Dashboard uses.
+
+  - On SPX, SPY, NDX and QQQ charts the levels now land in the right
+    place: the futures-to-cash spread is subtracted and the real
+    index-to-ETF ratio is used instead of a round number written into
+    the code.
+
+
+Live data instead of delayed data
+=================================
+Without an API key the indicator works, but it shows the free feed,
+which is deliberately delayed by three trading days. The levels you see
+are real - they just belong to an older session. This is not a fault.
+
+For current levels, put your key in the indicator settings (the ApiKey
+field), or create a plain text file named:
+
+    tlade_apikey.txt
+
+in either of these folders (either one works):
+
+    %USERPROFILE%\Documents\ATAS
+    %APPDATA%\ATAS
+
+Put only the key inside it, on one line, no quotes. Save, then re-add
+the indicator or toggle any of its settings to reload.
+
+
+How to check it worked
+======================
+The indicator writes a log file. Open:
+
+    %USERPROFILE%\Documents\ATAS\tlade_gex.log
+
+Look at the last lines. A healthy install looks like this:
+
+    FETCH SPX (live): HTTP 200 bytes=3066
+    PARSED levels=39 magnets=1
+
+  - HTTP 200 means the data arrived.
+  - PARSED levels above zero means it was read correctly.
+  - magnets is how many levels are balanced right now - it changes
+    through the day and can legitimately be 0 or 1.
+  - "(live)" means your key is working. "(free)" means no key, so the
+    data is the delayed feed.
+
+If you see HTTP 200 but PARSED levels=0, ATAS is still loading an older
+copy of the file - redo STEP 1 and STEP 3.
+
+If there are no FETCH lines at all, the indicator is not running.
+
+If your Documents folder is redirected to OneDrive, the log is at
+OneDrive\Documents\ATAS\tlade_gex.log instead.
+
+Send us those last lines and we can tell you exactly what is happening.
+
+
+What else is in this zip
+========================
+You do not need any of it to see the levels on your chart.
+
+  mac/            the same indicators for ATAS X on macOS. The .dll in
+                  there has the SAME NAME as the Windows one and will
+                  not load on Windows - do not mix them up.
+
+  python-bridge/  sends your ATAS price INTO the TLADe web terminal.
+                  Needs Python running (start.bat). Skip it unless you
+                  specifically want the web terminal fed from ATAS.
+
+  source/         the C# sources and the project file, for developers
+                  who want to read or build the indicators themselves.

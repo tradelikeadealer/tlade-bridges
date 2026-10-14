@@ -201,7 +201,7 @@ namespace ATAS.Indicators.Technical
             Panel = IndicatorDataProvider.CandlesPanel;
             DataSeries[0].IsHidden = true;
             TryLoadDefaultApiKey();
-            Log($"CTOR v3.0 instance hash={GetHashCode()} apiKeySet={!string.IsNullOrEmpty(ApiKey)}");
+            Log($"CTOR 3.5.3 instance hash={GetHashCode()} apiKeySet={!string.IsNullOrEmpty(ApiKey)}");
         }
 
         private void TryLoadDefaultApiKey()

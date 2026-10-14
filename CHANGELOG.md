@@ -10,6 +10,74 @@ has not changed since the one below it.
 
 ## NinjaTrader 8, ATAS, MotiveWave — TLADe GEX Levels
 
+### 3.5.3 — 14 October 2026 (ATAS only)
+
+**Fixed — the Quantum Field Ladder on ATAS drew nothing at all.**
+Since 12 October, 18:01 ET the data string carries `R:`, the index-to-ETF ratio. The Ladder
+was the one indicator never taught to read it: after stripping `S:` it tested the remainder
+for `L:`, found `R:` there instead, and left the level list empty. No error, no warning, an
+empty chart. Measured on the published build: 0 levels on the live string, 39 on the same
+string with the `R:` segment removed. Key holders lost it on Monday evening; without a key
+the delayed feed had not yet reached a date that carries `R:`, which is why some installs
+still worked.
+
+**Fixed — SPX, SPY, NDX and QQQ on the Ladder.**
+This closes what 3.5.2 listed as known open. SPX and NDX now subtract the futures-cash
+spread — the Ladder was drawing ES and NQ strikes on a cash chart, a whole spread off — and
+SPY and QQQ divide by the measured ratio from `R:` instead of the 10 and 40 written into the
+code. On 14 October that was 7.5 points of SPY and 26 of QQQ. When no spread is known the
+strikes pass through untouched: the spread setting now defaults to 0 instead of 24, because
+with a built-in default that guard could never fire and a string without `S:` shifted every
+level by an invented number.
+
+**New — a magnet is a verdict that travels, not something the indicator guesses.**
+A level where call and put gamma balance is a magnet and is drawn in cyan; a directional one
+is a wall and stays magenta. Until now the Ladder called only Zero Gamma a magnet and painted
+everything else magenta, which left a Quantum Field with nothing quantum about it. The engine
+decides and the answer rides in the profile section as `B:<strikes>,0,0`, three fields like
+`T:`. It goes there because the platforms require the string to start with `S:`, and because
+every parser skips a profile row whose first field is not a number — a sixth field on the
+level row would have landed inside Quantower's magnitude, which splits with a count of five,
+and silently zeroed every level.
+
+**New — Zero Gamma is a white line, always drawn.**
+It is the pivot of the field, not one level among many, so it is not behind any switch. The
+colour is a setting for anyone working on a light background. On ATAS it used to be the grey
+`#9ca3af`, the same grey as the vol bands and the structure levels.
+
+**New — the reference levels are lines, and they are off by default.**
+Max Pain, Expected Move, vol bands, Delta Flip and Charm Magnet are not field: with the new
+"Show system levels as lines" switch on, they draw as lines with the same colours and styles
+the GEX Dashboard uses. `EMR` is dropped entirely — it is the WIDTH of the RTH expected move,
+not a price, and as a level it put a line at 66 on an ES chart and 360 on an NQ one. "Max
+levels" now counts walls, which Max Pain and the vol bands used to eat.
+
+**Also — the log finally says which build is running.**
+Both ATAS indicators wrote `CTOR v3.0` while the release was 3.5.2, so a log told us nothing
+about what the user actually had installed. It now writes the release version, and the
+Ladder's parse line reports the magnet count: `PARSED levels=39 magnets=1`.
+
+**Packaging — the ATAS bundle is assembled from a named list.**
+It used to be the whole working folder, zipped. That shipped the real DLL buried under
+`bin/Release/net10.0-windows`, a second DLL with the identical filename under `mac/`, the
+as-delivered contributor sources in `original/`, a zip inside the zip — and no instructions,
+because `INSTALL.txt` had never been a tracked file. People installed the Mac file or a
+pre-3.5.0 source and got a silent blank chart. The zip now has `TLAdeBridgeATAS.dll` and
+`INSTALL.txt` at the top, with `mac/`, `python-bridge/` and `source/` beside them.
+
+**Known open.**
+The TradingView Quantum Field Ladder still divides by a hardcoded 10 and 40: its own data
+string comes from `generateQuantumDataString`, which carries no `R:`, so the fix above does
+not reach it. It also receives Zero Gamma with `nodeType=0`, so it paints it as a wall and
+the top-N sort by intensity drops it first.
+
+ATAS X on macOS is NOT fixed by this build. `TLADe-ATASX.zip` is uploaded by hand — it is not
+in the release workflow — and was last refreshed on 28 September. Its DLL carries all three
+indicators but is built outside this repository, so the Mac Quantum Field Ladder still has the
+blackout described at the top of this entry until someone rebuilds it on a Mac with ATAS X.
+
+---
+
 ### 3.5.2 — 13 October 2026
 
 **Fixed — SPY levels were 2.6 points off.**

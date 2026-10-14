@@ -25,7 +25,36 @@ jobs:
           cp -r bridges/ib            pkg/TLADe-IB-Bridge
           cp -r bridges/rithmic       pkg/TLADe-Rithmic-Bridge
           cp -r bridges/ninjatrader   pkg/TLADe-NT8-Bridge
-          cp -r bridges/atas          pkg/TLADe-ATAS-Bundle
+          # ATAS is assembled from a NAMED LIST, not copied wholesale. Copying the
+          # folder is what shipped the real DLL buried three levels down under
+          # bin/Release/net10.0-windows, a second DLL with the identical filename
+          # under mac/bin/Release, the as-delivered contributor sources in original/,
+          # a zip inside the zip, and no instructions at all - INSTALL.txt was never
+          # a tracked file, so it never reached anyone. Users copied the Mac file, or
+          # a pre-3.5.0 source, and the indicator silently showed nothing. One of them
+          # spent two days on it before writing to us. The release notes above already
+          # promise "no nested directories, no irrelevant files"; for ATAS that was
+          # not true until now. set -e is on, so a renamed or missing file fails the
+          # build loudly instead of quietly shipping a bundle with a hole in it.
+          # (14 October 2026)
+          A=pkg/TLADe-ATAS-Bundle
+          mkdir -p "$A/mac" "$A/python-bridge" "$A/source"
+          cp bridges/atas/INSTALL.txt                                     "$A/"
+          cp bridges/atas/README.md                                       "$A/"
+          cp bridges/atas/bin/Release/net10.0-windows/TLAdeBridgeATAS.dll "$A/"
+          cp bridges/atas/mac/bin/Release/TLAdeBridgeATAS.dll             "$A/mac/"
+          cp bridges/atas/mac/README.md                                   "$A/mac/"
+          cp bridges/atas/mac/start.command                               "$A/mac/"
+          cp bridges/atas/mac/tlade_bridge_atas.py                        "$A/mac/"
+          cp bridges/atas/start.bat                                       "$A/python-bridge/"
+          cp "bridges/atas/TLADe Autostart.bat"                           "$A/python-bridge/"
+          cp bridges/atas/tlade_bridge_atas.py                            "$A/python-bridge/"
+          cp bridges/atas/tlade_auto_fetch.py                             "$A/python-bridge/"
+          cp bridges/atas/tlade_push_levels.py                            "$A/python-bridge/"
+          cp bridges/atas/TLAdeBridgeATAS.cs                              "$A/source/"
+          cp bridges/atas/TLAdeGexDashboardATAS.cs                        "$A/source/"
+          cp bridges/atas/TLAdeQuantumFieldLadder.cs                      "$A/source/"
+          cp bridges/atas/TLAdeBridgeATAS.csproj                          "$A/source/"
           cd pkg
           zip -r ../TLADe-IB-Bridge.zip      TLADe-IB-Bridge
           zip -r ../TLADe-Rithmic-Bridge.zip TLADe-Rithmic-Bridge
