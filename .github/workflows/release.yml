@@ -105,6 +105,19 @@ jobs:
           # A subscriber found it by reporting a bug that was already fixed.
           # (7 October 2026)
           ( cd bridges/ninjatrader/TLADeGexDashboardNT && zip -r "$GITHUB_WORKSPACE/TLADeGexDashboardNT.zip" Indicators Info.xml )
+          # The Quantower indicator, zipped so it extracts to GammaExposure/ exactly
+          # as the hand-uploaded asset did - the README and anything a user wrote
+          # down still match. It was NOT in the files list and had been uploaded by
+          # hand on 13 September: verified byte-identical to the repo today, so
+          # nobody was running anything stale, but the NEXT change to it would not
+          # have reached the release. Fifth asset with this exact exposure, after
+          # TLADeGexDashboardNT.zip, the MotiveWave jar, ATASX and the NT8 bundle.
+          # (14 October 2026)
+          mkdir -p pkg-qt/GammaExposure
+          cp bridges/quantower/GammaExposure.cs  pkg-qt/GammaExposure/
+          cp bridges/quantower/GammaExposure.dll pkg-qt/GammaExposure/
+          cp bridges/quantower/README.md         pkg-qt/GammaExposure/
+          ( cd pkg-qt && zip -r "$GITHUB_WORKSPACE/GammaExposure-Quantower.zip" GammaExposure )
           # The MotiveWave jar is a BUILT artifact committed in the repo, and the
           # Indicators page links it straight off this release. It was not in the
           # files list below, so a push refreshed NT8 and ATAS and left MotiveWave
@@ -179,6 +192,7 @@ jobs:
           | All bridges (full bundle, fallback) | `TLADe-AllBridges.zip` |
           | NinjaTrader 8 indicator only (what the terminal links to) | `TLADeGexDashboardNT.zip` |
           | MotiveWave study (one jar: macOS, Windows, Linux) | `TLADeGexDashboard.jar` |
+          | Quantower indicator | `GammaExposure-Quantower.zip` |
 
           Source: `bridges/<feed>/` in the repo. Pick the feed you use,
           download the matching zip, "Extract All", run `start.bat`.
@@ -203,5 +217,6 @@ jobs:
             TLADe-ATASX.zip
             TLADe-AllBridges.zip
             TLADeGexDashboard.jar
+            GammaExposure-Quantower.zip
           make_latest: true
           fail_on_unmatched_files: true
