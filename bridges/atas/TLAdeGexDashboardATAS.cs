@@ -163,6 +163,18 @@ namespace ATAS.Indicators.Technical
         private decimal _snapESumPV, _snapESumV;
         private decimal _snapUSumPV, _snapUSumV;
         private decimal _snapPDSumPV, _snapPDSumV;
+        // The three session markers below are part of the SAME state as the sums and are
+        // snapshotted with them (16/10/2026, reported by Mihai Ostafe). On the first bar of
+        // a new session the reset block zeroes the sums and moves the marker forward; a
+        // live-tick re-entry that restored the sums but left the marker where the first call
+        // had put it would bring back the pre-reset totals and then skip the reset, because
+        // the marker already equals the new anchor. The new session went on averaging in the
+        // whole previous one, and the US -> PD promotion was undone the same way. One call
+        // per bar in history, forty a second on the forming bar: the historical lines were
+        // right and the live ones silently were not.
+        private DateTime _snapLastAsiaAnchor = DateTime.MinValue;
+        private DateTime _snapLastEUAnchor   = DateTime.MinValue;
+        private DateTime _snapLastUSAnchor   = DateTime.MinValue;
         private int _avwapLastComputedBar = -1;
 
         // v3.2 — local multi-TF BOS (W/D/H4/H1), computed from the chart's own
@@ -711,6 +723,9 @@ namespace ATAS.Indicators.Technical
                 _snapESumPV = _eSumPV; _snapESumV = _eSumV;
                 _snapUSumPV = _uSumPV; _snapUSumV = _uSumV;
                 _snapPDSumPV = _pdSumPV; _snapPDSumV = _pdSumV;
+                _snapLastAsiaAnchor = _lastAsiaAnchor;
+                _snapLastEUAnchor   = _lastEUAnchor;
+                _snapLastUSAnchor   = _lastUSAnchor;
                 _avwapLastComputedBar = bar;
             }
             else if (bar == _avwapLastComputedBar)
@@ -721,6 +736,11 @@ namespace ATAS.Indicators.Technical
                 _eSumPV = _snapESumPV; _eSumV = _snapESumV;
                 _uSumPV = _snapUSumPV; _uSumV = _snapUSumV;
                 _pdSumPV = _snapPDSumPV; _pdSumV = _snapPDSumV;
+                // Rewind the markers too, so the reset block below runs again on this
+                // re-entry exactly as it ran on the first call for this bar.
+                _lastAsiaAnchor = _snapLastAsiaAnchor;
+                _lastEUAnchor   = _snapLastEUAnchor;
+                _lastUSAnchor   = _snapLastUSAnchor;
             }
             else
             {
