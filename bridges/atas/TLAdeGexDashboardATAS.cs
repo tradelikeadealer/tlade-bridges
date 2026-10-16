@@ -155,6 +155,19 @@ namespace ATAS.Indicators.Technical
         private decimal _eSumPV, _eSumV;
         private decimal _uSumPV, _uSumV;
         private decimal _pdSumPV, _pdSumV;
+        // RTH-only accumulator (09:30-16:00 ET). It exists because the SSOT keeps the two
+        // apart: in the terminal the US line (uVW) runs from 09:30 to the latest bar with no
+        // end cut, while the Prev Day line (pdVW) is the VWAP of the previous trading day's
+        // RTH WINDOW ALONE - filterPrevDayBars() takes 09:30-16:00 and nothing else
+        // (clientEngineService.ts:740-769, :903-914). Promoting the US total at the rollover
+        // put the two post-bell hours 16:00-18:00 inside yesterday's reference level.
+        private decimal _rSumPV, _rSumV;
+        // A session that never opened is not drawn. Cleared at the futures-day rollover and
+        // raised only by a bar that actually falls inside the session's own window, so on a
+        // Sunday evening - and on every holiday - EU and US stay AVWAP_NA instead of
+        // accumulating the Asia bars and duplicating the Asia line. Same rule as the SSOT,
+        // which skips uVW before 09:30 and eVW outside 03:00-18:00 (clientEngineService.ts:917-923).
+        private bool _euOpened, _usOpened;
         // Snapshot of accumulators taken just BEFORE the current bar is processed
         // for the first time. Used to roll back when ATAS re-invokes OnCalculate
         // on the same bar tick-by-tick (live update) — without this every tick
@@ -163,6 +176,8 @@ namespace ATAS.Indicators.Technical
         private decimal _snapESumPV, _snapESumV;
         private decimal _snapUSumPV, _snapUSumV;
         private decimal _snapPDSumPV, _snapPDSumV;
+        private decimal _snapRSumPV, _snapRSumV;
+        private bool _snapEuOpened, _snapUsOpened;
         // The three session markers below are part of the SAME state as the sums and are
         // snapshotted with them (16/10/2026, reported by Mihai Ostafe). On the first bar of
         // a new session the reset block zeroes the sums and moves the marker forward; a
@@ -723,6 +738,8 @@ namespace ATAS.Indicators.Technical
                 _snapESumPV = _eSumPV; _snapESumV = _eSumV;
                 _snapUSumPV = _uSumPV; _snapUSumV = _uSumV;
                 _snapPDSumPV = _pdSumPV; _snapPDSumV = _pdSumV;
+                _snapRSumPV = _rSumPV; _snapRSumV = _rSumV;
+                _snapEuOpened = _euOpened; _snapUsOpened = _usOpened;
                 _snapLastAsiaAnchor = _lastAsiaAnchor;
                 _snapLastEUAnchor   = _lastEUAnchor;
                 _snapLastUSAnchor   = _lastUSAnchor;
@@ -736,6 +753,8 @@ namespace ATAS.Indicators.Technical
                 _eSumPV = _snapESumPV; _eSumV = _snapESumV;
                 _uSumPV = _snapUSumPV; _uSumV = _snapUSumV;
                 _pdSumPV = _snapPDSumPV; _pdSumV = _snapPDSumV;
+                _rSumPV = _snapRSumPV; _rSumV = _snapRSumV;
+                _euOpened = _snapEuOpened; _usOpened = _snapUsOpened;
                 // Rewind the markers too, so the reset block below runs again on this
                 // re-entry exactly as it ran on the first call for this bar.
                 _lastAsiaAnchor = _snapLastAsiaAnchor;
@@ -753,20 +772,42 @@ namespace ATAS.Indicators.Technical
             var euAnchor   = EUAnchorFor(et);
             var usAnchor   = USAnchorFor(et);
 
-            // New Asia session = futures day rollover. Promote US → PD before reset.
+            int etMins = et.Hour * 60 + et.Minute;
+
+            // New Asia session = futures day rollover. Promote the RTH total → PD before reset.
             if (asiaAnchor != _lastAsiaAnchor)
             {
-                _pdSumPV = _uSumPV;
-                _pdSumV  = _uSumV;
+                // Only when there IS an RTH total: a Saturday or holiday rollover has none, and
+                // overwriting PD with an empty one would throw away the last real session's
+                // level for the whole weekend. The SSOT walks back to the last weekday with at
+                // least ten RTH bars for the same reason (filterPrevDayBars).
+                if (_rSumV > 0)
+                {
+                    _pdSumPV = _rSumPV;
+                    _pdSumV  = _rSumV;
+                }
+                _rSumPV  = 0;
+                _rSumV   = 0;
                 _aSumPV  = 0;
                 _aSumV   = 0;
+                _euOpened = false;
+                _usOpened = false;
                 _lastAsiaAnchor = asiaAnchor;
             }
             if (euAnchor != _lastEUAnchor) { _eSumPV = 0; _eSumV = 0; _lastEUAnchor = euAnchor; }
             if (usAnchor != _lastUSAnchor) { _uSumPV = 0; _uSumV = 0; _lastUSAnchor = usAnchor; }
 
             decimal hlc3 = (candle.High + candle.Low + candle.Close) / 3m;
-            decimal vol  = candle.Volume;
+            // A zero-volume bar weighs 1, not 0, so it still moves the average by its own
+            // price: `vol = b.volume > 0 ? b.volume : 1` in the SSOT (clientEngineService.ts:945).
+            // With weight 0 a quiet overnight bar contributed nothing at all and the two
+            // platforms drifted apart on thin instruments.
+            decimal vol  = candle.Volume > 0 ? candle.Volume : 1m;
+
+            // A bar inside the session's own window means the session has opened for real.
+            // Both windows end at the 18:00 rollover, which is also where the flags are cleared.
+            if (etMins >= 180 && etMins < 1080) _euOpened = true;   // 03:00-18:00 ET
+            if (etMins >= 570 && etMins < 1080) _usOpened = true;   // 09:30-18:00 ET
 
             // Accumulate only if the bar is past the session anchor (= guards
             // against an Asia-anchor slipping a few seconds after the bar
@@ -774,10 +815,13 @@ namespace ATAS.Indicators.Technical
             if (et >= asiaAnchor) { _aSumPV += hlc3 * vol; _aSumV += vol; }
             if (et >= euAnchor)   { _eSumPV += hlc3 * vol; _eSumV += vol; }
             if (et >= usAnchor)   { _uSumPV += hlc3 * vol; _uSumV += vol; }
+            // The RTH accumulator is the only one with a closing bound: it is what becomes
+            // yesterday's reference at the next rollover.
+            if (etMins >= 570 && etMins < 960) { _rSumPV += hlc3 * vol; _rSumV += vol; }
 
             _avwapAsia[bar] = _aSumV > 0 ? _aSumPV / _aSumV : AVWAP_NA;
-            _avwapEU[bar]   = _eSumV > 0 ? _eSumPV / _eSumV : AVWAP_NA;
-            _avwapUS[bar]   = _uSumV > 0 ? _uSumPV / _uSumV : AVWAP_NA;
+            _avwapEU[bar]   = _euOpened && _eSumV > 0 ? _eSumPV / _eSumV : AVWAP_NA;
+            _avwapUS[bar]   = _usOpened && _uSumV > 0 ? _uSumPV / _uSumV : AVWAP_NA;
             _avwapPD[bar]   = _pdSumV > 0 ? _pdSumPV / _pdSumV : AVWAP_NA;
         }
 
