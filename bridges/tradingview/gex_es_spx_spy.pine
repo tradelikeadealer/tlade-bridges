@@ -591,8 +591,12 @@ if tfActive and showSessions and showUS and recentSessionOnly
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
 // AVWAP — uses same session flags as boxes (no wall-clock dependency)
-// Each AVWAP resets at its session start and accumulates through US close (16:00).
-// All AVWAPs reset at new futures day (Asia start = 18:00 ET).
+// An AVWAP has two parameters only: where it anchors and when it re-anchors (Stefano,
+// 17/10/2026). The four lines are one rule with four anchors, all re-anchored on the futures
+// day at 18:00 ET: Asia 18:00, EU 03:00, US 09:30, and Prev Day the 09:30 of the PREVIOUS
+// futures day, running on to the live bar. Each one therefore accumulates from its own anchor
+// to the 18:00 rollover, which is what its `*Active` flag already says - and nothing stops at
+// 16:00. The reference is the terminal, services/clientEngineService.ts computeAVWAP.
 
 float src = hlc3
 float vol = nz(volume, 1)  // fallback: zero-volume bars get weight 1
@@ -602,17 +606,14 @@ bool asiaStart = inAsia and not inAsia[1]
 bool euStart   = inEU   and not inEU[1]
 bool usStart   = inUS   and not inUS[1]
 
-// Track current futures day — reset flag at Asia start
-var bool inCurrentDay = false
-if asiaStart
-    inCurrentDay := true
+// `inCurrentDay` and `inGap` used to live here and gated all four AVWAPs. Between 16:00 and
+// 18:00 ET they switched the accumulation off, but the market still trades until 17:00: every
+// line skipped that hour, every day, and the Prev Day seed skipped it twice. Measured against
+// the terminal on 45 days of real ES 5m bars: up to 1.8 pt on Asia and US, up to 4.6 pt on
+// Prev Day. The session's own `*Active` flag already bounds each line at the 18:00 rollover,
+// so the gate was only ever removing bars.
 
-// Between 16:00-18:00 ET = gap, no futures day
-bool inGap = etMins >= 960 and etMins < 1080
-if inGap
-    inCurrentDay := false
-
-// Asia AVWAP — resets at Asia start, accumulates through US close
+// Asia AVWAP — anchored at 18:00 ET, runs to the 18:00 rollover
 var float aSumPV = 0.0
 var float aSumV  = 0.0
 var bool asiaActive = false
@@ -620,12 +621,12 @@ if asiaStart
     aSumPV := src * vol
     aSumV  := vol
     asiaActive := true
-else if asiaActive and inCurrentDay
+else if asiaActive
     aSumPV += src * vol
     aSumV  += vol
 float avwapAsia = aSumV > 0 ? aSumPV / aSumV : na
 
-// EU AVWAP — resets at EU start, accumulates through US close
+// EU AVWAP — anchored at 03:00 ET, runs to the 18:00 rollover
 var float eSumPV = 0.0
 var float eSumV  = 0.0
 var bool euActive = false
@@ -635,12 +636,12 @@ if euStart
     eSumPV := src * vol
     eSumV  := vol
     euActive := true
-else if euActive and inCurrentDay
+else if euActive
     eSumPV += src * vol
     eSumV  += vol
 float avwapEU = eSumV > 0 ? eSumPV / eSumV : na
 
-// US AVWAP — resets at US start, accumulates through US close only
+// US AVWAP — anchored at 09:30 ET, runs to the 18:00 rollover (no 16:00 cut)
 var float uSumPV = 0.0
 var float uSumV  = 0.0
 var bool usActive = false
@@ -650,29 +651,31 @@ if usStart
     uSumPV := src * vol
     uSumV  := vol
     usActive := true
-else if usActive and inUS
+else if usActive
     uSumPV += src * vol
     uSumV  += vol
 float avwapUS = uSumV > 0 ? uSumPV / uSumV : na
 
-// US Previous Day AVWAP — promoted at futures day reset, accumulates on all bars
+// Prev Day AVWAP — the same 09:30 anchor one futures day back, still running
 var float pdSumPV = 0.0
 var float pdSumV  = 0.0
+// Not an `else if`: on the rollover bar the Prev Day both takes over yesterday's 09:30 anchor
+// AND counts that bar, exactly as the terminal does - its filter keeps every bar of the current
+// futures day, the 18:00 one included.
 if asiaStart and uSumV > 0
-    // Promote current US → PD before reset
     pdSumPV := uSumPV
     pdSumV  := uSumV
-else if pdSumV > 0 and inCurrentDay
+if pdSumV > 0
     pdSumPV += src * vol
     pdSumV  += vol
 float avwapPD = pdSumV > 0 ? pdSumPV / pdSumV : na
 
 // Show AVWAP only when active. When showHistoricalAVWAP is off, limit to the current (last) futures day.
 bool recentOnly = showHistoricalAVWAP or inLastDay
-float pAsia = tfActive and showAVWAP and showAvwapAsia and asiaActive and inCurrentDay and recentOnly ? avwapAsia : na
-float pEU   = tfActive and showAVWAP and showAvwapEU   and euActive   and inCurrentDay and recentOnly ? avwapEU   : na
-float pUS   = tfActive and showAVWAP and showAvwapUS   and usActive   and inUS         and recentOnly ? avwapUS   : na
-float pPD   = tfActive and showAVWAP and showAvwapPD   and pdSumV > 0 and inCurrentDay and recentOnly ? avwapPD   : na
+float pAsia = tfActive and showAVWAP and showAvwapAsia and asiaActive and recentOnly ? avwapAsia : na
+float pEU   = tfActive and showAVWAP and showAvwapEU   and euActive   and recentOnly ? avwapEU   : na
+float pUS   = tfActive and showAVWAP and showAvwapUS   and usActive   and recentOnly ? avwapUS   : na
+float pPD   = tfActive and showAVWAP and showAvwapPD   and pdSumV > 0 and recentOnly ? avwapPD   : na
 
 plot(pAsia, "AVWAP Asia",    color=colorAvwapAsia, linewidth=avwapWidth, style=plot.style_linebr)
 plot(pEU,   "AVWAP EU",      color=colorAvwapEU,   linewidth=avwapWidth, style=plot.style_linebr)

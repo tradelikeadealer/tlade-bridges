@@ -155,19 +155,6 @@ namespace ATAS.Indicators.Technical
         private decimal _eSumPV, _eSumV;
         private decimal _uSumPV, _uSumV;
         private decimal _pdSumPV, _pdSumV;
-        // RTH-only accumulator (09:30-16:00 ET). It exists because the SSOT keeps the two
-        // apart: in the terminal the US line (uVW) runs from 09:30 to the latest bar with no
-        // end cut, while the Prev Day line (pdVW) is the VWAP of the previous trading day's
-        // RTH WINDOW ALONE - filterPrevDayBars() takes 09:30-16:00 and nothing else
-        // (clientEngineService.ts:740-769, :903-914). Promoting the US total at the rollover
-        // put the two post-bell hours 16:00-18:00 inside yesterday's reference level.
-        private decimal _rSumPV, _rSumV;
-        // A session that never opened is not drawn. Cleared at the futures-day rollover and
-        // raised only by a bar that actually falls inside the session's own window, so on a
-        // Sunday evening - and on every holiday - EU and US stay AVWAP_NA instead of
-        // accumulating the Asia bars and duplicating the Asia line. Same rule as the SSOT,
-        // which skips uVW before 09:30 and eVW outside 03:00-18:00 (clientEngineService.ts:917-923).
-        private bool _euOpened, _usOpened;
         // Snapshot of accumulators taken just BEFORE the current bar is processed
         // for the first time. Used to roll back when ATAS re-invokes OnCalculate
         // on the same bar tick-by-tick (live update) — without this every tick
@@ -176,20 +163,15 @@ namespace ATAS.Indicators.Technical
         private decimal _snapESumPV, _snapESumV;
         private decimal _snapUSumPV, _snapUSumV;
         private decimal _snapPDSumPV, _snapPDSumV;
-        private decimal _snapRSumPV, _snapRSumV;
-        private bool _snapEuOpened, _snapUsOpened;
-        // The three session markers below are part of the SAME state as the sums and are
-        // snapshotted with them (16/10/2026, reported by Mihai Ostafe). On the first bar of
-        // a new session the reset block zeroes the sums and moves the marker forward; a
-        // live-tick re-entry that restored the sums but left the marker where the first call
-        // had put it would bring back the pre-reset totals and then skip the reset, because
-        // the marker already equals the new anchor. The new session went on averaging in the
-        // whole previous one, and the US -> PD promotion was undone the same way. One call
+        // The futures-day marker is part of the SAME state as the sums and is snapshotted
+        // with them (16/10/2026, reported by Mihai Ostafe). On the first bar of a new day the
+        // reset block zeroes the sums and moves the marker forward; a live-tick re-entry that
+        // restored the sums but left the marker where the first call had put it would bring
+        // back the pre-reset totals and then skip the reset, because the marker already equals
+        // the new day. The new session went on averaging in the whole previous one. One call
         // per bar in history, forty a second on the forming bar: the historical lines were
         // right and the live ones silently were not.
-        private DateTime _snapLastAsiaAnchor = DateTime.MinValue;
-        private DateTime _snapLastEUAnchor   = DateTime.MinValue;
-        private DateTime _snapLastUSAnchor   = DateTime.MinValue;
+        private DateTime _snapLastFuturesDay = DateTime.MinValue;
         private int _avwapLastComputedBar = -1;
 
         // v3.2 — local multi-TF BOS (W/D/H4/H1), computed from the chart's own
@@ -201,9 +183,7 @@ namespace ATAS.Indicators.Technical
         private readonly List<LevelEntry> _localPA = new List<LevelEntry>();
         private int _paLastComputedBars = -1;
         private int _bosLastComputedBars = -1;
-        private DateTime _lastAsiaAnchor = DateTime.MinValue;
-        private DateTime _lastEUAnchor   = DateTime.MinValue;
-        private DateTime _lastUSAnchor   = DateTime.MinValue;
+        private DateTime _lastFuturesDay = DateTime.MinValue;
 
         private RenderFont _fn;
         private readonly RenderStringFormat _sfL =
@@ -738,11 +718,7 @@ namespace ATAS.Indicators.Technical
                 _snapESumPV = _eSumPV; _snapESumV = _eSumV;
                 _snapUSumPV = _uSumPV; _snapUSumV = _uSumV;
                 _snapPDSumPV = _pdSumPV; _snapPDSumV = _pdSumV;
-                _snapRSumPV = _rSumPV; _snapRSumV = _rSumV;
-                _snapEuOpened = _euOpened; _snapUsOpened = _usOpened;
-                _snapLastAsiaAnchor = _lastAsiaAnchor;
-                _snapLastEUAnchor   = _lastEUAnchor;
-                _snapLastUSAnchor   = _lastUSAnchor;
+                _snapLastFuturesDay = _lastFuturesDay;
                 _avwapLastComputedBar = bar;
             }
             else if (bar == _avwapLastComputedBar)
@@ -753,13 +729,9 @@ namespace ATAS.Indicators.Technical
                 _eSumPV = _snapESumPV; _eSumV = _snapESumV;
                 _uSumPV = _snapUSumPV; _uSumV = _snapUSumV;
                 _pdSumPV = _snapPDSumPV; _pdSumV = _snapPDSumV;
-                _rSumPV = _snapRSumPV; _rSumV = _snapRSumV;
-                _euOpened = _snapEuOpened; _usOpened = _snapUsOpened;
-                // Rewind the markers too, so the reset block below runs again on this
+                // Rewind the marker too, so the reset block below runs again on this
                 // re-entry exactly as it ran on the first call for this bar.
-                _lastAsiaAnchor = _snapLastAsiaAnchor;
-                _lastEUAnchor   = _snapLastEUAnchor;
-                _lastUSAnchor   = _snapLastUSAnchor;
+                _lastFuturesDay = _snapLastFuturesDay;
             }
             else
             {
@@ -767,61 +739,58 @@ namespace ATAS.Indicators.Technical
                 return;
             }
 
+            // An AVWAP has two parameters only: where it anchors and when it re-anchors
+            // (Stefano, 17/10/2026). The four lines are one function with four anchors, all
+            // re-anchored on the futures day, and AsiaAnchorFor() - the 18:00 ET that opens
+            // the day - is that day's identity.
+            //   Asia  18:00 ET of the current futures day
+            //   EU    03:00 ET      "
+            //   US    09:30 ET      "
+            //   PD    09:30 ET of the PREVIOUS futures day, running on to the live bar
+            // Inside one futures day the bars run 18:00 -> 17:59, so an etMins below 1080
+            // separates the new calendar day from the evening that opened it. A session whose
+            // anchor has not been reached yet simply has no bars, so it needs no "has opened"
+            // flag: EU and US stay AVWAP_NA by themselves on a Sunday evening and on holidays.
             var et = ToEt(candle.Time);
-            var asiaAnchor = AsiaAnchorFor(et);
-            var euAnchor   = EUAnchorFor(et);
-            var usAnchor   = USAnchorFor(et);
-
+            var futuresDay = AsiaAnchorFor(et);
             int etMins = et.Hour * 60 + et.Minute;
 
-            // New Asia session = futures day rollover. Promote the RTH total → PD before reset.
-            if (asiaAnchor != _lastAsiaAnchor)
+            if (futuresDay != _lastFuturesDay)
             {
-                // Only when there IS an RTH total: a Saturday or holiday rollover has none, and
-                // overwriting PD with an empty one would throw away the last real session's
-                // level for the whole weekend. The SSOT walks back to the last weekday with at
-                // least ten RTH bars for the same reason (filterPrevDayBars).
-                if (_rSumV > 0)
+                // The Prev Day line is not a separate quantity: it is the same 09:30 anchor one
+                // futures day back, kept alive. Carrying the US totals over is how a streaming
+                // platform says "yesterday" when it cannot address yesterday's bars - the
+                // terminal, which holds the whole array, just filters from that anchor.
+                // Only when the day that ends actually had an RTH session: a Saturday or
+                // holiday rollover has none, and overwriting PD with an empty one would throw
+                // away the last real level for the whole weekend.
+                if (_uSumV > 0)
                 {
-                    _pdSumPV = _rSumPV;
-                    _pdSumV  = _rSumV;
+                    _pdSumPV = _uSumPV;
+                    _pdSumV  = _uSumV;
                 }
-                _rSumPV  = 0;
-                _rSumV   = 0;
-                _aSumPV  = 0;
-                _aSumV   = 0;
-                _euOpened = false;
-                _usOpened = false;
-                _lastAsiaAnchor = asiaAnchor;
+                _aSumPV = 0; _aSumV = 0;
+                _eSumPV = 0; _eSumV = 0;
+                _uSumPV = 0; _uSumV = 0;
+                _lastFuturesDay = futuresDay;
             }
-            if (euAnchor != _lastEUAnchor) { _eSumPV = 0; _eSumV = 0; _lastEUAnchor = euAnchor; }
-            if (usAnchor != _lastUSAnchor) { _uSumPV = 0; _uSumV = 0; _lastUSAnchor = usAnchor; }
 
             decimal hlc3 = (candle.High + candle.Low + candle.Close) / 3m;
             // A zero-volume bar weighs 1, not 0, so it still moves the average by its own
-            // price: `vol = b.volume > 0 ? b.volume : 1` in the SSOT (clientEngineService.ts:945).
+            // price: vol = b.volume > 0 ? b.volume : 1 in the SSOT (clientEngineService.ts).
             // With weight 0 a quiet overnight bar contributed nothing at all and the two
             // platforms drifted apart on thin instruments.
             decimal vol  = candle.Volume > 0 ? candle.Volume : 1m;
 
-            // A bar inside the session's own window means the session has opened for real.
-            // Both windows end at the 18:00 rollover, which is also where the flags are cleared.
-            if (etMins >= 180 && etMins < 1080) _euOpened = true;   // 03:00-18:00 ET
-            if (etMins >= 570 && etMins < 1080) _usOpened = true;   // 09:30-18:00 ET
-
-            // Accumulate only if the bar is past the session anchor (= guards
-            // against an Asia-anchor slipping a few seconds after the bar
-            // close, which would otherwise count the bar twice).
-            if (et >= asiaAnchor) { _aSumPV += hlc3 * vol; _aSumV += vol; }
-            if (et >= euAnchor)   { _eSumPV += hlc3 * vol; _eSumV += vol; }
-            if (et >= usAnchor)   { _uSumPV += hlc3 * vol; _uSumV += vol; }
-            // The RTH accumulator is the only one with a closing bound: it is what becomes
-            // yesterday's reference at the next rollover.
-            if (etMins >= 570 && etMins < 960) { _rSumPV += hlc3 * vol; _rSumV += vol; }
+            _aSumPV += hlc3 * vol; _aSumV += vol;
+            if (etMins >= 180 && etMins < 1080) { _eSumPV += hlc3 * vol; _eSumV += vol; }
+            if (etMins >= 570 && etMins < 1080) { _uSumPV += hlc3 * vol; _uSumV += vol; }
+            // PD runs continuously once it has an anchor; before the first rollover it has none.
+            if (_pdSumV > 0) { _pdSumPV += hlc3 * vol; _pdSumV += vol; }
 
             _avwapAsia[bar] = _aSumV > 0 ? _aSumPV / _aSumV : AVWAP_NA;
-            _avwapEU[bar]   = _euOpened && _eSumV > 0 ? _eSumPV / _eSumV : AVWAP_NA;
-            _avwapUS[bar]   = _usOpened && _uSumV > 0 ? _uSumPV / _uSumV : AVWAP_NA;
+            _avwapEU[bar]   = _eSumV > 0 ? _eSumPV / _eSumV : AVWAP_NA;
+            _avwapUS[bar]   = _uSumV > 0 ? _uSumPV / _uSumV : AVWAP_NA;
             _avwapPD[bar]   = _pdSumV > 0 ? _pdSumPV / _pdSumV : AVWAP_NA;
         }
 
@@ -830,18 +799,6 @@ namespace ATAS.Indicators.Technical
             // 18:00 ET — futures day start
             var today18 = new DateTime(et.Year, et.Month, et.Day, 18, 0, 0);
             return et >= today18 ? today18 : today18.AddDays(-1);
-        }
-        private static DateTime EUAnchorFor(DateTime et)
-        {
-            // 03:00 ET — Europe open (was 02:00: the TradingView indicator and the chart both anchor at 03:00)
-            var today03 = new DateTime(et.Year, et.Month, et.Day, 3, 0, 0);
-            return et >= today03 ? today03 : today03.AddDays(-1);
-        }
-        private static DateTime USAnchorFor(DateTime et)
-        {
-            // 09:30 ET — RTH open
-            var today0930 = new DateTime(et.Year, et.Month, et.Day, 9, 30, 0);
-            return et >= today0930 ? today0930 : today0930.AddDays(-1);
         }
 
         private static DateTime ToEt(DateTime barTime)
