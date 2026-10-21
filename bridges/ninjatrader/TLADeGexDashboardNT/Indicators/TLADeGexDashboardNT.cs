@@ -1,4 +1,4 @@
-﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.2 (13 October 2026)
+﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.4 (21 October 2026)
 // Changes since 3.5.0 are in CHANGELOG.md at the root of this repository.
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
@@ -59,6 +59,9 @@ namespace NinjaTrader.NinjaScript.Indicators
         private Brush _negBrush = Brushes.Red;
         private Brush _profCallBrush = Brushes.Red;
         private Brush _profPutBrush = Brushes.LimeGreen;
+        // Wall line + label brushes: the theme pair unless Wall Color Style is Custom.
+        private Brush _callWallBrush = Brushes.Red;
+        private Brush _putWallBrush = Brushes.LimeGreen;
 
         private int _prevFontSize = -1;
         private SimpleFont _labelFont;
@@ -191,7 +194,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (State == State.SetDefaults)
             {
                 Name = "TLADe GEX";
-                Description = "TLADe GEX Levels 3.5.2 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
+                Description = "TLADe GEX Levels 3.5.4 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
                 Calculate = Calculate.OnPriceChange;
                 IsOverlay = true;
                 DisplayInDataBox = false;
@@ -225,6 +228,9 @@ namespace NinjaTrader.NinjaScript.Indicators
                 BarColorStyle = "Theme Colors"; // Theme Colors / Greyscale / Custom
                 CustomBarCallColor = System.Windows.Media.Color.FromRgb(0xef, 0x44, 0x44);
                 CustomBarPutColor  = System.Windows.Media.Color.FromRgb(0x22, 0xc5, 0x5e);
+                WallColorStyle = "Theme Colors"; // Theme Colors / Custom
+                CustomCallWallBrush = Brushes.Red;
+                CustomPutWallBrush  = Brushes.LimeGreen;
 
                 // Layout
                 RightOffsetBars  = 30;  // base "future" anchor
@@ -462,6 +468,9 @@ namespace NinjaTrader.NinjaScript.Indicators
                 BarColorStyle ?? "",
                 CustomBarCallColor.ToString(),
                 CustomBarPutColor.ToString(),
+                WallColorStyle ?? "",
+                Serialize.BrushToString(CustomCallWallBrush),
+                Serialize.BrushToString(CustomPutWallBrush),
                 RightOffsetBars.ToString(inv),
                 LabelPaddingBars.ToString(inv),
                 ProfileOffsetBars.ToString(inv),
@@ -1380,13 +1389,13 @@ namespace NinjaTrader.NinjaScript.Indicators
                 if (lvl.Type == "CW")
                 {
                     isWallFlipped = IsWallFlipped(lvl.EsStrike);
-                    lvlBrush = _negBrush;
+                    lvlBrush = _callWallBrush;
                     if (!maxIsAll && !isProtected) { if (isAbove) gexAboveDrawn++; else gexBelowDrawn++; }
                 }
                 else if (lvl.Type == "PW")
                 {
                     isWallFlipped = IsWallFlipped(lvl.EsStrike);
-                    lvlBrush = _posBrush;
+                    lvlBrush = _putWallBrush;
                     if (!maxIsAll && !isProtected) { if (isAbove) gexAboveDrawn++; else gexBelowDrawn++; }
                 }
                 else if (lvl.Type == "ZG") lvlBrush = MakeBrush(C_ZG, 255);
@@ -1778,6 +1787,20 @@ namespace NinjaTrader.NinjaScript.Indicators
             _posBrush = pb;
             _negBrush = nb;
 
+            // Wall line + label brushes. Colour = nature stays the rule; Custom only lets the
+            // user pick which colour each nature gets (asked for by a subscriber, 20/10/2026).
+            string wcs = (WallColorStyle ?? "").Trim();
+            if (wcs.Equals("Custom", StringComparison.OrdinalIgnoreCase))
+            {
+                _callWallBrush = CustomCallWallBrush ?? _negBrush;
+                _putWallBrush  = CustomPutWallBrush  ?? _posBrush;
+            }
+            else
+            {
+                _callWallBrush = _negBrush;
+                _putWallBrush  = _posBrush;
+            }
+
             // Profile bar brushes (independent of level brushes)
             string bcs = (BarColorStyle ?? "").Trim();
             if (bcs.Equals("Greyscale", StringComparison.OrdinalIgnoreCase))
@@ -1870,6 +1893,24 @@ namespace NinjaTrader.NinjaScript.Indicators
         [XmlIgnore]
         [Display(Name = "  ↳ Custom Put Bar Color", GroupName = "Colors", Order = 3)]
         public System.Windows.Media.Color CustomBarPutColor { get; set; }
+
+        [Display(Name = "Wall Color Style (Theme Colors/Custom)", GroupName = "Colors", Order = 4,
+                 Description = "Custom: the Call Wall and Put Wall lines and labels take the two colours below instead of the theme pair. Profile bars are not affected.")]
+        public string WallColorStyle { get; set; }
+
+        [XmlIgnore]
+        [Display(Name = "  ↳ Custom Call Wall Color", GroupName = "Colors", Order = 5)]
+        public Brush CustomCallWallBrush { get; set; }
+
+        [Browsable(false)]
+        public string CustomCallWallBrushSerialize { get { return Serialize.BrushToString(CustomCallWallBrush); } set { CustomCallWallBrush = Serialize.StringToBrush(value); } }
+
+        [XmlIgnore]
+        [Display(Name = "  ↳ Custom Put Wall Color", GroupName = "Colors", Order = 6)]
+        public Brush CustomPutWallBrush { get; set; }
+
+        [Browsable(false)]
+        public string CustomPutWallBrushSerialize { get { return Serialize.BrushToString(CustomPutWallBrush); } set { CustomPutWallBrush = Serialize.StringToBrush(value); } }
 
         [Range(0, 500)]
         [Display(Name = "Right Offset Bars (base)", GroupName = "Layout", Order = 0)]

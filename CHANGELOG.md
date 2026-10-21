@@ -10,6 +10,24 @@ has not changed since the one below it.
 
 ## NinjaTrader 8, ATAS, MotiveWave — TLADe GEX Levels
 
+### 3.5.4 — 21 October 2026 (NinjaTrader 8 only)
+
+**New — the Call Wall and Put Wall can take your own colours.**
+Asked for by a subscriber: the theme pair (red Call Wall, green Put Wall in Wall Street
+Classic) could only be swapped for another theme's pair, never chosen. "Custom Call/Put Bar
+Color" changed the profile bars and nothing else. In the Colors group there is now
+`Wall Color Style` (Theme Colors / Custom) with `Custom Call Wall Color` and `Custom Put Wall
+Color` under it. On Custom, the wall lines and their labels take those two colours; the
+profile bars, the themes and every other level are untouched. The two colours are saved with
+the template and the workspace, the NinjaTrader way (`Serialize.BrushToString`).
+
+The rule behind the colours does not move: a wall is coloured by its nature, never by where
+price is. Custom lets you pick which colour each nature gets; a flipped wall is still told by
+the thinner line and the ↺ suffix.
+
+**Verified:** compiles against NinjaTrader 8.1.8.3 with zero errors and zero warnings. Not yet
+seen on a live chart at the time of publishing.
+
 ### 3.5.3 — 14 October 2026 (ATAS only)
 
 **Fixed — the Quantum Field Ladder on ATAS drew nothing at all.**
