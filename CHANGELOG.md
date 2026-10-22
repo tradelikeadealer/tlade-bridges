@@ -10,6 +10,32 @@ has not changed since the one below it.
 
 ## NinjaTrader 8, ATAS, MotiveWave — TLADe GEX Levels
 
+### 3.6.1 — 22 October 2026 (ATAS, ATAS X, TradingView ES and NQ)
+
+**ATAS — labels no longer cover each other.** Two levels a few points apart drew one label over
+the other (a subscriber on ATAS X, Mac, 22/10). The line stays at its price; the label box now moves
+to the first free slot — below the line, then above, then further out — the same outcome as the
+terminal, whose axis labels never overlap. DLLs rebuilt and committed.
+
+**TradingView — Worldlines H1, as the terminal draws them.** The AVWAP displacement lines of the
+terminal are now in the ES and NQ scripts, a copy of the client engine's rule: a closed H1 that
+breaks the previous H1's high or low with the body doing more than the wick, confirmed by the gap
+of the third H1; anchor on the latest 5-bar swing pivot within five H1 bars, refined to the chart
+bar with the extreme of that hour; AVWAP HLC3 × volume from the anchor (a zero-volume bar weighs 1);
+death at the H1 close that violates it, frozen and dashed from there. All alive lines plus the four
+most recently dead; width 3/2/1 by intensity (STRONG when the body exceeds EM × √(60/390), EM = EH −
+EL of the data string); "H1 <value> active" on the alive ones. Exact on a 5-minute chart, nearest
+on 1/2/3/10/15/20/30/60, silent above 1H. Polylines: `max_polylines_count=100`,
+`max_bars_back=5000`.
+
+**TradingView — profile transparency.** "Transparency" in the GEX Profile Style group lightens the
+profile bars (0 = as before).
+
+**Not changed:** NinjaTrader 8, MotiveWave, Quantower.
+
+**Verified:** ATAS and ATAS X build in Release with zero errors; the Pine scripts compiled and drew
+the worldlines on Stefano's chart (ES 5m, 22/10). Label collision not yet seen on a live chart.
+
 ### 3.6.0 — 22 October 2026 (NinjaTrader 8, ATAS, ATAS X, MotiveWave, TradingView ES and NQ)
 
 **New — every indicator says which publication its levels come from, and STALE when it is behind.**

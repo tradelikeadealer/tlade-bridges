@@ -1,6 +1,6 @@
 //@version=6
 // TLADe GEX Levels — NQ/NDX/QQQ — release 3.6.0 (22 October 2026)
-indicator("GEX Levels + Breakout Structure + Session AVWAP — NQ/NDX/QQQ", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+indicator("GEX Levels + Breakout Structure + Session AVWAP — NQ/NDX/QQQ", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500, max_polylines_count=100, max_bars_back=5000)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║  INPUTS                                                                      ║
@@ -56,6 +56,7 @@ groupProfile = "GEX Profile Style"
 profileWidth = input.int(50, "Bar Width", group=groupProfile, inline="p1")
 barThickness = input.int(8, "Bar Height", group=groupProfile, inline="p1")
 profileOffset = input.int(15, "Offset", group=groupProfile)
+profileTransp = input.int(0, "Transparency", minval=0, maxval=95, group=groupProfile, tooltip="0 = as designed; higher = lighter profile bars (3.6.1)")
 
 groupBOS = "Breakout Structure (BOS)"
 // One switch for the whole group, like Session Boxes and Session AVWAP. The per-timeframe
@@ -752,10 +753,287 @@ if showAVWAP and showAvwapLabels and barstate.islast
         avwapLblPD := f_avwapLabel(avwapLblPD, pPD, "AVWAP US Prev Day", colorAvwapPD)
 
 // ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  WORLDLINES H1 (3.6.1) — AVWAP displacement lines, as the terminal draws them         ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+// A COPY of the terminal's rule. CANONICAL: terminal/services/clientEngineService.ts
+// (detectDisplacements, findSwingAnchor, refineAnchorTo5m, trackWorldlines) and the chart filter
+// in terminal/components/ChartSection.tsx. Pine cannot import it (CLAUDE.md Rule #12): change both.
+//   H1 candles = clock-hour buckets of the chart bars. A DISPLACEMENT is a closed H1 that closes
+//   through the previous H1's high (bull) / low (bear) with the body doing more than the wick
+//   (close − prev.high > high − close), and whose NEXT closed H1 leaves a 3-bar gap (FVG:
+//   next.low > prev.high / next.high < prev.low). The chart draws only FVG-confirmed ones, so a
+//   worldline is born when the third H1 closes. Intensity: STRONG when the body ≥ EM × √(60/390)
+//   (EM = the day's expected move, EH − EL of the data string), else REGULAR.
+//   ANCHOR = the latest 5-bar swing pivot (low for bull / high for bear) within 5 H1 bars before
+//   the displacement, the displacement bar itself if none; refined to the chart bar of that hour
+//   with the lowest low / highest high. One worldline per (direction, anchor hour); a stronger
+//   re-test upgrades the intensity, the birth stays the earliest.
+//   LINE = AVWAP from the anchor bar: Σ(HLC3 × volume) / Σ(volume), a bar with zero volume weighs 1.
+//   DEATH = at an H1 close (the last chart bar of the hour), once the displacement's own hour has
+//   closed: bull dies when close < AVWAP, bear when close > AVWAP; the line freezes there.
+//   RENDER = all alive + the 4 most recently dead. Width 3/2/1 by intensity (STRONG/REGULAR/WEAK),
+//   alpha .95/.75/.50 alive, .55 dashed when dead; "H1 <value> active" label on the alive ones.
+//   The terminal works on 5-minute bars: this block gives the same lines on a 5-minute chart and
+//   the nearest thing on 1/2/3/10/15/20/30/60; silent above 1H.
+groupWL = "Worldlines H1"
+showWorldlines = input.bool(true, "Show Worldlines H1", group=groupWL)
+wlColorBull = input.color(color.rgb(38, 166, 154), "Bull", group=groupWL, inline="wlc")
+wlColorBear = input.color(color.rgb(239, 83, 80), "Bear", group=groupWL, inline="wlc")
+wlShowLabels = input.bool(true, "Labels on active lines", group=groupWL)
+wlActive = showWorldlines and tfActive and timeframe.in_seconds() <= 3600 and 3600 % timeframe.in_seconds() == 0
+
+// EM range of the day from the data string (EH − EL, display scale) = the GVI the terminal uses
+f_wlEmRange(string s) =>
+    float eh = na
+    float el = na
+    string rest = s
+    if str.startswith(rest, "S:")
+        int sEnd = str.pos(rest, "|")
+        if sEnd > 2
+            rest := str.substring(rest, sEnd + 1)
+    if str.startswith(rest, "R:")
+        int rEnd = str.pos(rest, "|")
+        if rEnd > 2
+            rest := str.substring(rest, rEnd + 1)
+    string lvl = rest
+    if str.contains(lvl, "|P:")
+        lvl := str.substring(lvl, 0, str.pos(lvl, "|P:"))
+    if str.startswith(lvl, "L:")
+        lvl := str.substring(lvl, 2)
+    if lvl != ""
+        for pair in str.split(lvl, ";")
+            string[] p = str.split(pair, ",")
+            if array.size(p) >= 2
+                float v = str.tonumber(array.get(p, 0))
+                string t = array.get(p, 1)
+                if not na(v) and t == "EH"
+                    eh := f_convertPrice(v)
+                if not na(v) and t == "EL"
+                    el := f_convertPrice(v)
+    not na(eh) and not na(el) and eh > el ? eh - el : na
+var float wlEmRange = f_wlEmRange(gexDataActive)
+float wlGviTf = na(wlEmRange) ? na : wlEmRange * math.sqrt(60.0 / 390.0)
+
+// cumulative sums for every AVWAP from any anchor: Σ(HLC3 × w) and Σ(w), w = volume or 1
+float wlW = volume > 0 ? volume : 1.0
+float wlCumPV = ta.cum(hlc3 * wlW)
+float wlCumV = ta.cum(wlW)
+max_bars_back(wlCumPV, 5000)
+max_bars_back(wlCumV, 5000)
+max_bars_back(low, 1000)
+max_bars_back(high, 1000)
+// AVWAP from an anchor = (Σ up to this bar − Σ up to the bar before the anchor) / (same for the weights).
+// The sums before the anchor are stored at birth (wlPvBase / wlVBase), so no bar ever looks further
+// back than the 4900 bars of a drawn line.
+
+// closed H1 candles of the chart (clock hours), with the chart bars they span
+var float[] wlH1O = array.new<float>()
+var float[] wlH1H = array.new<float>()
+var float[] wlH1L = array.new<float>()
+var float[] wlH1C = array.new<float>()
+var int[] wlH1T = array.new<int>()
+var int[] wlH1First = array.new<int>()
+var int[] wlH1Last = array.new<int>()
+// worldlines
+var int[] wlDir = array.new<int>()          // 1 bull, -1 bear
+var int[] wlAnchorBar = array.new<int>()    // chart bar the AVWAP starts from
+var int[] wlAnchorH1 = array.new<int>()     // H1 bucket time of the anchor (identity)
+var int[] wlBirthT = array.new<int>()       // displacement H1 time (ms)
+var int[] wlIntensity = array.new<int>()    // 3 STRONG, 2 REGULAR, 1 WEAK
+var bool[] wlAlive = array.new<bool>()
+var int[] wlDeathBar = array.new<int>()     // bar of death, -1 while alive
+var float[] wlPvBase = array.new<float>()   // Σ(HLC3 × w) up to the bar before the anchor
+var float[] wlVBase = array.new<float>()    // Σ(w) up to the bar before the anchor
+// the forming hour
+var int wlCurHb = na
+var float wlCurO = na
+var float wlCurH = na
+var float wlCurL = na
+var float wlCurC = na
+var int wlCurFirst = na
+
+if wlActive
+    int hb = int(math.floor(time / 3600000.0))
+    if na(wlCurHb) or hb != wlCurHb
+        if not na(wlCurHb)
+            // the previous hour closed: record it, then look for a displacement confirmed by it
+            array.push(wlH1O, wlCurO)
+            array.push(wlH1H, wlCurH)
+            array.push(wlH1L, wlCurL)
+            array.push(wlH1C, wlCurC)
+            array.push(wlH1T, wlCurHb * 3600000)
+            array.push(wlH1First, wlCurFirst)
+            array.push(wlH1Last, bar_index - 1)
+            if array.size(wlH1T) > 400
+                array.shift(wlH1O)
+                array.shift(wlH1H)
+                array.shift(wlH1L)
+                array.shift(wlH1C)
+                array.shift(wlH1T)
+                array.shift(wlH1First)
+                array.shift(wlH1Last)
+            int n = array.size(wlH1T)
+            if n >= 3
+                int i = n - 2          // the breakout candidate, closed before the hour just closed
+                int ip = i - 1         // the hour before it
+                int nx = n - 1         // the hour just closed: confirms the gap
+                float cO = array.get(wlH1O, i)
+                float cH = array.get(wlH1H, i)
+                float cL = array.get(wlH1L, i)
+                float cC = array.get(wlH1C, i)
+                float pH = array.get(wlH1H, ip)
+                float pL = array.get(wlH1L, ip)
+                float xH = array.get(wlH1H, nx)
+                float xL = array.get(wlH1L, nx)
+                int dir = 0
+                if cC > pH and (cC - pH) > (cH - cC)
+                    dir := 1
+                else if cC < pL and (pL - cC) > (cC - cL)
+                    dir := -1
+                bool fvg = dir == 1 ? xL > pH : dir == -1 ? xH < pL : false
+                if dir != 0 and fvg
+                    float body = math.abs(cC - cO)
+                    int intensity = not na(wlGviTf) and body >= wlGviTf ? 3 : 2
+                    // swing anchor on the H1 bars: latest 5-bar pivot at or before i, within 5 bars
+                    int j = i
+                    int anchorJ = -1
+                    int minJ = math.max(2, i - 5)
+                    while j >= minJ and anchorJ < 0
+                        bool isPivot = true
+                        for k = -2 to 2
+                            if k != 0 and j + k >= 0 and j + k <= i
+                                if dir == 1 and array.get(wlH1L, j) > array.get(wlH1L, j + k)
+                                    isPivot := false
+                                if dir == -1 and array.get(wlH1H, j) < array.get(wlH1H, j + k)
+                                    isPivot := false
+                        if isPivot
+                            anchorJ := j
+                        j -= 1
+                    if anchorJ < 0
+                        anchorJ := i
+                    // refine to the chart bar of that hour with the lowest low / highest high
+                    int bFirst = array.get(wlH1First, anchorJ)
+                    int bLast = array.get(wlH1Last, anchorJ)
+                    int anchorBar = bFirst
+                    float best = dir == 1 ? low[bar_index - bFirst] : high[bar_index - bFirst]
+                    for b = bFirst to bLast
+                        int off = bar_index - b
+                        if off >= 0
+                            if dir == 1 and low[off] < best
+                                best := low[off]
+                                anchorBar := b
+                            if dir == -1 and high[off] > best
+                                best := high[off]
+                                anchorBar := b
+                    int anchorH1 = array.get(wlH1T, anchorJ)
+                    int birthT = array.get(wlH1T, i)
+                    int offBase = bar_index - anchorBar + 1
+                    float pvBase = 0.0
+                    float vBase = 0.0
+                    if anchorBar > 0 and offBase <= 4990
+                        pvBase := wlCumPV[offBase]
+                        vBase := wlCumV[offBase]
+                    // one worldline per (direction, anchor hour): a stronger re-test upgrades it
+                    int found = -1
+                    if array.size(wlDir) > 0
+                        for w = 0 to array.size(wlDir) - 1
+                            if array.get(wlDir, w) == dir and array.get(wlAnchorH1, w) == anchorH1
+                                found := w
+                    if found >= 0
+                        if intensity > array.get(wlIntensity, found)
+                            array.set(wlIntensity, found, intensity)
+                    else
+                        array.push(wlDir, dir)
+                        array.push(wlAnchorBar, anchorBar)
+                        array.push(wlAnchorH1, anchorH1)
+                        array.push(wlBirthT, birthT)
+                        array.push(wlIntensity, intensity)
+                        array.push(wlAlive, true)
+                        array.push(wlDeathBar, -1)
+                        array.push(wlPvBase, pvBase)
+                        array.push(wlVBase, vBase)
+        wlCurHb := hb
+        wlCurO := open
+        wlCurH := high
+        wlCurL := low
+        wlCurC := close
+        wlCurFirst := bar_index
+    else
+        wlCurH := math.max(wlCurH, high)
+        wlCurL := math.min(wlCurL, low)
+        wlCurC := close
+    // death check at the last chart bar of the hour, once the displacement's own hour has closed
+    bool wlCloseH1 = (time + timeframe.in_seconds() * 1000) % 3600000 == 0
+    if wlCloseH1 and array.size(wlDir) > 0
+        for w = 0 to array.size(wlDir) - 1
+            if array.get(wlAlive, w) and time >= array.get(wlBirthT, w) + 3600000
+                float avV = wlCumV - array.get(wlVBase, w)
+                float av = avV > 0 ? (wlCumPV - array.get(wlPvBase, w)) / avV : na
+                int d = array.get(wlDir, w)
+                if not na(av) and ((d == 1 and close < av) or (d == -1 and close > av))
+                    array.set(wlAlive, w, false)
+                    array.set(wlDeathBar, w, bar_index)
+    // keep every alive line and the 4 most recently dead; nothing older than 4900 bars (history limit)
+    if array.size(wlDir) > 0
+        int deadKept = 0
+        for w = array.size(wlDir) - 1 to 0
+            bool tooOld = bar_index - array.get(wlAnchorBar, w) > 4900
+            if not array.get(wlAlive, w) or tooOld
+                deadKept += tooOld ? 0 : 1
+                if deadKept > 4 or tooOld
+                    array.remove(wlDir, w)
+                    array.remove(wlAnchorBar, w)
+                    array.remove(wlAnchorH1, w)
+                    array.remove(wlBirthT, w)
+                    array.remove(wlIntensity, w)
+                    array.remove(wlAlive, w)
+                    array.remove(wlDeathBar, w)
+                    array.remove(wlPvBase, w)
+                    array.remove(wlVBase, w)
+
+// draw: one polyline per worldline, rebuilt on the last bar
+var polyline[] wlPolys = array.new<polyline>()
+var label[] wlLabels = array.new<label>()
+if barstate.islast
+    for pl in wlPolys
+        polyline.delete(pl)
+    array.clear(wlPolys)
+    for lb in wlLabels
+        label.delete(lb)
+    array.clear(wlLabels)
+    if wlActive and array.size(wlDir) > 0
+        for w = 0 to array.size(wlDir) - 1
+            int d = array.get(wlDir, w)
+            bool alive = array.get(wlAlive, w)
+            int inten = array.get(wlIntensity, w)
+            int aBar = array.get(wlAnchorBar, w)
+            int eBar = alive ? bar_index : array.get(wlDeathBar, w)
+            if eBar - aBar > 4900
+                aBar := eBar - 4900
+            color base = d == 1 ? wlColorBull : wlColorBear
+            int transp = not alive ? 45 : inten == 3 ? 5 : inten == 2 ? 25 : 50
+            color col = color.new(base, transp)
+            chart.point[] pts = array.new<chart.point>()
+            float lastV = na
+            float pvB = array.get(wlPvBase, w)
+            float vB = array.get(wlVBase, w)
+            for b = aBar to eBar
+                int off = bar_index - b
+                float vv = off >= 0 and off <= 4900 ? wlCumV[off] - vB : na
+                float v = not na(vv) and vv > 0 ? (wlCumPV[off] - pvB) / vv : na
+                if not na(v)
+                    array.push(pts, chart.point.from_index(b, v))
+                    lastV := v
+            if array.size(pts) >= 2
+                array.push(wlPolys, polyline.new(pts, curved=false, closed=false, xloc=xloc.bar_index, line_color=col, line_style=alive ? line.style_solid : line.style_dashed, line_width=inten))
+                if alive and wlShowLabels and not na(lastV)
+                    array.push(wlLabels, label.new(bar_index + 2, lastV, "H1 " + str.tostring(lastV, format.mintick) + " active", style=label.style_label_left, color=color.new(base, 100), textcolor=color.new(base, 0), size=size.small))
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║  GEX LEVELS + PROFILE (last bar only — same logic as GEX Dashboard v6.8)     ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-string stateKey = gexDataActive + str.tostring(confluenceEmPct) + str.tostring(profileWidth) + str.tostring(barThickness) + str.tostring(profileOffset) + colorScheme + barColorStyle + lineStyleInput + str.tostring(lineWidth) + str.tostring(lineLeftExt) + lineExtendInput + str.tostring(labelTranspWalls) + str.tostring(labelTranspSys) + leftAnchorMode + tickerChoice
+string stateKey = gexDataActive + str.tostring(confluenceEmPct) + str.tostring(profileTransp) + str.tostring(profileWidth) + str.tostring(barThickness) + str.tostring(profileOffset) + colorScheme + barColorStyle + lineStyleInput + str.tostring(lineWidth) + str.tostring(lineLeftExt) + lineExtendInput + str.tostring(labelTranspWalls) + str.tostring(labelTranspSys) + leftAnchorMode + tickerChoice
 bool needsRedraw = barstate.islast and (stateKey != prevState or bar_index != lastBarIdx or not tfActive)
 
 if needsRedraw
@@ -1016,7 +1294,7 @@ if needsRedraw
                     color barCall = barColorStyle == "Greyscale" ? #a0a0a0 : colorNeg
                     color barPut = barColorStyle == "Greyscale" ? #505050 : colorPos
                     color baseC = sign >= 0 ? barCall : barPut
-                    array.push(gexBoxes, box.new(xZero, cvStrike + boxH / 2, xZero + barLen, cvStrike - boxH / 2, border_color=color.new(baseC, 0), border_width=1, bgcolor=color.new(baseC, fillT)))
+                    array.push(gexBoxes, box.new(xZero, cvStrike + boxH / 2, xZero + barLen, cvStrike - boxH / 2, border_color=color.new(baseC, profileTransp), border_width=1, bgcolor=color.new(baseC, math.min(95, fillT + profileTransp))))
 
     // ═════════════════════════════════════════════════════════════════
     // CONFLUENCE ZONES — cluster levels within a band sized on the EM range

@@ -113,6 +113,8 @@ namespace ATAS.Indicators.Technical
         private string _flipsComputedKey = "";
         private struct AlertLevel { public double Price; public string Name; public string Kind; }
         private readonly List<AlertLevel> _alertLevels = new List<AlertLevel>();
+        // Label boxes placed in the current frame — HL() keeps a new label off the ones already drawn.
+        private readonly List<DRect> _labelBoxes = new List<DRect>();
         private readonly object _alertLock = new object();
         private int _alertLastBar = -1;
         private double _ndxQqqRatio = 0.0;
@@ -1067,6 +1069,7 @@ namespace ATAS.Indicators.Technical
 
                 EnsureFont();
                 ResolveTheme();
+                _labelBoxes.Clear();
                 if (!TfActive()) { lock (_alertLock) _alertLevels.Clear(); return; }
 
                 int regionW = ChartInfo.PriceChartContainer.Region.Width;
@@ -1287,6 +1290,19 @@ namespace ATAS.Indicators.Technical
                     ? color
                     : DColor.FromArgb(LabelTextColor.A, LabelTextColor.R, LabelTextColor.G, LabelTextColor.B);
                 int boxX = lx - 2, boxY = ly - 1, boxW = labW + 6, boxH = labH + 2;
+                // Two levels a few points apart drew one label over the other (Alden, ATAS X on
+                // Mac, 22/10/2026). The line stays at its price; the label box moves to the first
+                // free slot: below the line, then above, then further out — the same outcome as
+                // the terminal, whose axis labels never cover one another.
+                var box = new DRect(boxX, boxY, boxW, boxH);
+                for (int step = 1; step <= 8 && _labelBoxes.Exists(b => b.IntersectsWith(box)); step++)
+                {
+                    int k = (step + 1) / 2;
+                    int dy = (step % 2 == 1) ? k * (boxH + 2) : -k * (boxH + 2);
+                    box = new DRect(boxX, boxY + dy, boxW, boxH);
+                }
+                _labelBoxes.Add(box);
+                boxY = box.Y; ly = boxY + 1;
                 ctx.FillRectangle(bg, new DRect(boxX, boxY, boxW, boxH));
                 ctx.DrawString(label, _fn, textCol,
                     new DRect(lx, ly, labW + 4, labH), _sfL);
