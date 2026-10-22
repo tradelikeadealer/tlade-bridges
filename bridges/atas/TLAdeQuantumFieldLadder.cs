@@ -226,7 +226,7 @@ namespace ATAS.Indicators.Technical
             Panel = IndicatorDataProvider.CandlesPanel;
             DataSeries[0].IsHidden = true;
             TryLoadDefaultApiKey();
-            Log($"CTOR 3.5.3 instance hash={GetHashCode()} apiKeySet={!string.IsNullOrEmpty(ApiKey)}");
+            Log($"CTOR 3.6.0 instance hash={GetHashCode()} apiKeySet={!string.IsNullOrEmpty(ApiKey)}");
         }
 
         private void TryLoadDefaultApiKey()
@@ -293,7 +293,8 @@ namespace ATAS.Indicators.Technical
         {
             base.OnInitialize();
             Log($"OnInitialize: starting scheduler (autoFetch={AutoFetch})");
-            if (!AutoFetch) return;
+            // The scheduler always runs: AutoFetch is read on every tick, so switching it on
+            // later in the settings takes effect within a minute.
             _schedulerCts?.Cancel();
             _schedulerCts = new CancellationTokenSource();
             // 1 immediate fetch at mount, then a wall-clock check every minute. Independent from
@@ -315,9 +316,12 @@ namespace ATAS.Indicators.Technical
         {
             try
             {
-                Log("Scheduler: mount fetch");
-                await FetchOnce().ConfigureAwait(false);
-                _catchUp.MarkFetched(TLAdePublication.ExpectedKey(TLAdePublication.EtNow()));
+                if (AutoFetch)
+                {
+                    Log("Scheduler: mount fetch");
+                    await FetchOnce().ConfigureAwait(false);
+                    _catchUp.MarkFetched(TLAdePublication.ExpectedKey(TLAdePublication.EtNow()));
+                }
 
                 while (!ct.IsCancellationRequested)
                 {
@@ -715,7 +719,7 @@ namespace ATAS.Indicators.Technical
                 string age = string.IsNullOrEmpty(_rawData)
                     ? "no data yet"
                     : TLAdePublication.Label(_isDelayedMode, _pubDateId, _pubSession, _pubHhmm,
-                        AutoFetch && !string.IsNullOrEmpty(ApiKey) && string.IsNullOrEmpty(GexDataInput), out stale);
+                        AutoFetch && !string.IsNullOrEmpty(ApiKey), !string.IsNullOrEmpty(GexDataInput), out stale);
                 _staleDrawn = stale;
                 string txt = $" TLADe Quantum [{mode}] levels={count} · {age}";
                 var sz = ctx.MeasureString(txt, _fn);

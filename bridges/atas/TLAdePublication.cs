@@ -116,16 +116,19 @@ namespace ATAS.Indicators.Technical
         }
 
         // The status line: what the levels are, and when stale, what was expected instead.
-        public static string Label(bool delayedMode, string heldDateId, string heldSession, string heldHhmm, bool autoFetchLive, out bool stale)
+        // `manual`: a pasted string is on the chart, and on ATAS it wins over any fetch.
+        public static string Label(bool delayedMode, string heldDateId, string heldSession, string heldHhmm, bool autoFetchLive, bool manual, out bool stale)
         {
             stale = IsStale(delayedMode, heldDateId, heldSession, out var expDate, out var expSession);
             string label = string.IsNullOrEmpty(heldDateId)
                 ? "levels: publication unknown (string without T: marker — copy a fresh one from the terminal)"
                 : $"levels: {heldDateId} {heldSession} {heldHhmm} ET";
             if (!stale) return label;
-            string hint = autoFetchLive
-                ? "auto-fetch is retrying"
-                : "paste the latest string from the terminal, or set your API key for auto-fetch";
+            string hint = manual
+                ? "paste the latest string from the terminal, or clear the pasted string to let auto-fetch run"
+                : autoFetchLive
+                    ? "auto-fetch is retrying"
+                    : "set your API key and Auto-fetch, or paste the latest string from the terminal";
             return $"{label} — STALE: expected {expDate} {expSession}; {hint}";
         }
     }
