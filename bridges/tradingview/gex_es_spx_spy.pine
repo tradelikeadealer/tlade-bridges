@@ -1,5 +1,5 @@
 //@version=6
-// TLADe GEX Levels — ES/SPX/SPY — release 3.5.1 (12 October 2026)
+// TLADe GEX Levels — ES/SPX/SPY — release 3.6.0 (22 October 2026)
 // 3.5.1 — SPY levels were converted with a hardcoded /10. SPY tracks the index at roughly a
 //         tenth, and "roughly" is not a conversion: the real ratio was 10.033 on 12/10/2026,
 //         so every SPY level sat about 2.6 points high. The ratio now travels in the data
@@ -1175,3 +1175,110 @@ if enableAlerts and alertBOS and array.size(bosLevels) > 0
         if crossUp or crossDown
             string dir = crossUp ? "UP" : "DOWN"
             alert("TLADe BO " + (isBull ? "L" : "S") + " " + tf + " " + str.tostring(price, format.mintick) + " crossed " + dir, alert.freq_once_per_bar)
+
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  PUBLICATION AGE (3.6.0) — which publication the levels come from, STALE when behind  ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+// The data string carries "T:<dateId>,<SESSION>,<hh:mm>;" as the first row of P:. The badge names
+// that publication and says STALE when a newer one should exist at this ET time. A pasted string
+// cannot refresh itself: the only cure is to paste the latest one from the terminal (one subscriber
+// had two charts, one on Friday's CLOSE and one on today's, 21/10/2026).
+// PUBLICATION SCHEDULE, ET — A COPY. The canonical copy is C:\TLADe\config\sessionConfig.ts
+// (SESSIONS[].times.NY, read by getAutopilotSchedules). Pine cannot import it (CLAUDE.md Rule #12):
+// if the schedule changes there, change it here too. The same rule lives in the NT8, ATAS and
+// MotiveWave indicators of this bundle.
+//   ASIA 18:01 the evening before (dateId = the next trading day; none on Friday evening, Sunday 18:01
+//   opens Monday) · EUROPE 03:15 · PRE_OPEN 08:00 · RTH_OPEN 09:30 · OPENING_RANGE 10:30 · CLOSE 13:00.
+//   Holidays are not modelled: on a US holiday with no publication the badge says STALE, which is the truth.
+const string PUB_TZ = "America/New_York"
+const int PUB_GRACE_MIN = 10
+
+f_pubRank(string s) =>
+    s == "ASIA" ? 0 : s == "EUROPE" ? 1 : s == "PRE_OPEN" ? 2 : s == "RTH_OPEN" ? 3 : s == "OPENING_RANGE" ? 4 : s == "CLOSE" ? 5 : -1
+
+// Day number of a yyyy-MM-dd (taken at ET noon, so DST never moves it across midnight); na when malformed.
+f_pubDayNum(string dateId) =>
+    int dayNum = na
+    string[] p = str.split(dateId, "-")
+    if array.size(p) == 3
+        float y = str.tonumber(array.get(p, 0))
+        float m = str.tonumber(array.get(p, 1))
+        float d = str.tonumber(array.get(p, 2))
+        if not na(y) and not na(m) and not na(d)
+            dayNum := int(math.floor(timestamp(PUB_TZ, int(y), int(m), int(d), 12, 0) / 86400000))
+    dayNum
+
+// Orderable key of a publication: day number * 8 + session rank; na when unknown.
+f_pubKey(string dateId, string sess) =>
+    int rank = f_pubRank(sess)
+    int dayNum = f_pubDayNum(dateId)
+    rank < 0 or na(dayNum) ? int(na) : dayNum * 8 + rank
+
+// The publication that should exist now: [dayNum, session, dateText].
+f_pubExpected(int nowMs) =>
+    int mins = hour(nowMs, PUB_TZ) * 60 + minute(nowMs, PUB_TZ)
+    int dow = dayofweek(nowMs, PUB_TZ)
+    int today = int(math.floor(timestamp(PUB_TZ, year(nowMs, PUB_TZ), month(nowMs, PUB_TZ), dayofmonth(nowMs, PUB_TZ), 12, 0) / 86400000))
+    int day = today
+    string s = "ASIA"
+    if dow == dayofweek.saturday
+        day := today - 1
+        s := "CLOSE"
+    else if dow == dayofweek.sunday
+        if mins >= 18 * 60 + 1 + PUB_GRACE_MIN
+            day := today + 1
+            s := "ASIA"
+        else
+            day := today - 2
+            s := "CLOSE"
+    else if mins >= 18 * 60 + 1 + PUB_GRACE_MIN
+        if dow == dayofweek.friday
+            s := "CLOSE"
+        else
+            day := today + 1
+            s := "ASIA"
+    else if mins >= 13 * 60 + PUB_GRACE_MIN
+        s := "CLOSE"
+    else if mins >= 10 * 60 + 30 + PUB_GRACE_MIN
+        s := "OPENING_RANGE"
+    else if mins >= 9 * 60 + 30 + PUB_GRACE_MIN
+        s := "RTH_OPEN"
+    else if mins >= 8 * 60 + PUB_GRACE_MIN
+        s := "PRE_OPEN"
+    else if mins >= 3 * 60 + 15 + PUB_GRACE_MIN
+        s := "EUROPE"
+    string dateText = str.format_time(day * 86400000 + 43200000, "yyyy-MM-dd", PUB_TZ)
+    [day, s, dateText]
+
+// The "T:" row of the active string, right after "P:" (the server and the terminal both put it first).
+f_pubMarker(string raw) =>
+    string dateId = ""
+    string sess = ""
+    string hhmm = ""
+    int pp = str.pos(raw, "|P:")
+    if pp >= 0
+        string prof = str.substring(raw, pp + 3)
+        bool first = str.startswith(prof, "T:")
+        int t = first ? 0 : str.pos(prof, ";T:")
+        if t >= 0
+            string rest = str.substring(prof, first ? 2 : t + 3)
+            int e = str.pos(rest, ";")
+            string body = e >= 0 ? str.substring(rest, 0, e) : rest
+            string[] f = str.split(body, ",")
+            if array.size(f) == 3 and f_pubRank(array.get(f, 1)) >= 0 and not na(f_pubDayNum(array.get(f, 0)))
+                dateId := array.get(f, 0)
+                sess := array.get(f, 1)
+                hhmm := array.get(f, 2)
+    [dateId, sess, hhmm]
+
+var table pubTable = table.new(position.top_right, 1, 1)
+if barstate.islast
+    [pubDate, pubSess, pubHhmm] = f_pubMarker(gexDataActive)
+    [expDay, expSess, expDate] = f_pubExpected(timenow)
+    int heldKey = f_pubKey(pubDate, pubSess)
+    int expKey = expDay * 8 + f_pubRank(expSess)
+    bool pubStale = not na(heldKey) and heldKey < expKey
+    string pubTxt = pubDate == "" ? (gexDataInput == "" ? "TLADe levels: built-in sample string — paste today's string from the terminal (Live GEX Override)" : "TLADe levels: publication unknown (string without T: marker — copy a fresh one from the terminal)") : "TLADe levels: " + pubDate + " " + pubSess + " " + pubHhmm + " ET"
+    if pubStale
+        pubTxt += "\nSTALE — expected " + expDate + " " + expSess + ": paste the latest string from the terminal"
+    table.cell(pubTable, 0, 0, pubTxt, text_color=pubStale ? color.white : color.new(color.gray, 20), bgcolor=pubStale ? color.new(color.red, 20) : color.new(color.black, 60), text_size=size.small, text_halign=text.align_left)

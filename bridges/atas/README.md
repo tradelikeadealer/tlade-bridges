@@ -44,10 +44,12 @@ v3.0 drove the 6 daily auto-fetches from inside `OnCalculate`. That callback onl
 
 v3.1 introduces a real `System.Threading.CancellationTokenSource`-backed scheduler started in `OnInitialize` and torn down in `OnDispose`. It:
 - runs **independently of OnCalculate** (= zero dependency on tick rate)
-- fires **exactly 7 fetches per trading day**: 1 at mount + 6 absolute ET slots (02:05 EU, 08:05 PRE, 09:35 RTH, 10:35 OR, 13:05 CLOSE, 18:05 ASIA)
+- fires **exactly 7 fetches per trading day**: 1 at mount + 6 absolute ET slots (02:05 EU, 08:05 PRE, 09:35 RTH, 10:35 OR, 13:05 CLOSE, 18:05 ASIA) — *until 3.5; see 3.6.0 below*
 - correctly picks the *next ascending* slot regardless of the time the indicator is added (the v3.1.0-pre subtle bug — slot array iteration order — was caught in testing and fixed before release).
 
-`tlade_gex.log` now shows lifecycle lines like `Scheduler: sleeping 235.4min until next ET slot` confirming the next firing window.
+`tlade_gex.log` shows the scheduler lifecycle (`Scheduler: mount fetch`, `Scheduler: catch-up fetch (held … expected …)`).
+
+**3.6.0 (22 October 2026):** the fixed slots are gone. Once a minute the scheduler compares the publication the levels come from (the `T:` row of the data string) with the one that should exist at the current ET time, and fetches when the held one is older — 5 minutes apart for three tries, then every 15. The status badge names the publication (`levels: 2026-10-21 OPENING_RANGE 10:30 ET`) and turns red with `STALE: expected …` when behind. The Quantum Field Ladder now uses the same scheduler (until 3.5 it fetched from `OnCalculate`, so a quiet chart missed its slots). Shared rule: `TLAdePublication.cs`.
 
 **2. Two new level families in the payload**
 
@@ -183,7 +185,7 @@ pointing to `start.bat`. Delete the shortcut to disable autostart.
 
 **Purpose:** Draws GEX walls (CW = Call Wall, PW = Put Wall) and system levels (ZG = Zero Gamma, MP = Max Pain, EH/EL = Expected Move High/Low, VH/VL = Volatility Bands, PDH/PDL/PWH/PWL = previous session structure) as horizontal lines on the chart, refreshed automatically.
 
-**Auto-refresh schedule (ET):** 18:05, 02:05, 08:05, 09:35, 10:35, 13:05 — six fetches per day matching the TLADe NT8 reference. Plus one fetch the first time the indicator is added to the chart.
+**Auto-refresh:** one fetch when the indicator is added to the chart, then a check every minute: when the publication the levels come from is older than the one expected at the current ET time (ASIA 18:01 the evening before, EUROPE 03:15, PRE_OPEN 08:00, RTH_OPEN 09:30, OPENING_RANGE 10:30, CLOSE 13:00), it fetches again. The status badge names the publication and says STALE while it is behind.
 
 ### Key Settings
 

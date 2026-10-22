@@ -3,7 +3,7 @@
 //  Copyright (c) 2026 Mihai Ostafe — TLADe ATAS Quantum Field Ladder contribution
 //  Copyright (c) 2026 TLADe — Trade Like a Dealer (https://tradelikeadealer.com)
 //
-//  TLADe Quantum Field Ladder — ATAS Edition  v3.0.1
+//  TLADe Quantum Field Ladder — ATAS Edition  v3.0.1 — bundle release 3.6.0 (22 October 2026)
 //  ─────────────────────────────────────────────────────────────────────────────
 //  Mihai's v3.0.0 with a TLADe-side fix on top: strikes for ES/NQ are passed
 //  through raw because the cloud already publishes them in futures space —
@@ -28,6 +28,7 @@ using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using System.IO;
 using System.Net.Http;
+using System.Threading;
 using System.Threading.Tasks;
 #if ATASX
 // ATAS X e' Avalonia, non WPF: i colori delle impostazioni sono System.Drawing.Color.
@@ -60,7 +61,11 @@ namespace ATAS.Indicators.Technical
         };
         private const string API_URL =
             "https://europe-west1-omggex.cloudfunctions.net/indicatorData";
-        private static readonly int[] FETCH_MINUTES_ET = { 1085, 125, 485, 575, 635, 785 };
+        // 3.6.0 — publication age and catch-up fetch: TLAdePublication.cs (shared with the Dashboard).
+        private string _pubDateId = "", _pubSession = "", _pubHhmm = "";   // from T:; empty when the string has none
+        private bool _staleDrawn = false;
+        private readonly TLAdeCatchUp _catchUp = new TLAdeCatchUp();
+        private CancellationTokenSource _schedulerCts;
 
         private static readonly string _logPath = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments),
@@ -102,10 +107,6 @@ namespace ATAS.Indicators.Technical
             C_VB    = DColor.FromArgb(0x9c, 0xa3, 0xaf),
             C_CHARM = DColor.FromArgb(0xf9, 0x73, 0x16),
             C_DFLIP = DColor.FromArgb(0xf5, 0x9e, 0x0b);
-        private int      _lastFetchMinuteEt  = -1;
-        private DateTime _lastFetchUtc       = DateTime.MinValue;
-        private bool     _initialFetchTried  = false;
-
         private RenderFont _fn;
         private readonly RenderStringFormat _sfL =
             new() { Alignment = StringAlignment.Near, LineAlignment = StringAlignment.Near };
@@ -262,7 +263,7 @@ namespace ATAS.Indicators.Technical
                 if (bar != CurrentBar - 1) return;
 
                 if (_ocCalls <= 3 || _ocCalls % 2000 == 0)
-                    Log($"OnCalc #{_ocCalls} (live) bar={bar} CurrentBar={CurrentBar} initialFetched={_initialFetchTried}");
+                    Log($"OnCalc #{_ocCalls} (live) bar={bar} CurrentBar={CurrentBar}");
 
                 if (!string.IsNullOrEmpty(GexDataInput))
                 {
@@ -275,16 +276,8 @@ namespace ATAS.Indicators.Technical
                     return;
                 }
 
-                if (!AutoFetch) return;
-
-                if (!_initialFetchTried)
-                {
-                    _initialFetchTried = true;
-                    Log($"OnCalc triggering initial fetch on bar={bar}");
-                    Task.Run(() => FetchOnce());
-                    return;
-                }
-                TryScheduledFetch();
+                // Fetch lifecycle is owned by the scheduler (OnInitialize → RunScheduler), as in
+                // the Dashboard since v3.1. OnCalculate only handles the manual-paste path above.
             }
             catch (Exception ex)
             {
@@ -292,29 +285,67 @@ namespace ATAS.Indicators.Technical
             }
         }
 
-        private void TryScheduledFetch()
+        // ──────────────────────────────────────────────────────────────────────
+        //  LIFECYCLE — wall-clock scheduler (3.6.0, = the Dashboard's)
+        // ──────────────────────────────────────────────────────────────────────
+
+        protected override void OnInitialize()
+        {
+            base.OnInitialize();
+            Log($"OnInitialize: starting scheduler (autoFetch={AutoFetch})");
+            if (!AutoFetch) return;
+            _schedulerCts?.Cancel();
+            _schedulerCts = new CancellationTokenSource();
+            // 1 immediate fetch at mount, then a wall-clock check every minute. Independent from
+            // the OnCalculate tick rate — fires even when the chart receives zero ticks (cash
+            // index out of RTH, futures quiet hours, weekend, PC back from sleep). Until 3.5 the
+            // Ladder fetched from OnCalculate inside six fixed ET slots: a quiet chart missed them.
+            _ = RunScheduler(_schedulerCts.Token);
+        }
+
+        protected override void OnDispose()
+        {
+            try { _schedulerCts?.Cancel(); } catch { }
+            _schedulerCts = null;
+            Log("OnDispose: scheduler cancelled");
+            base.OnDispose();
+        }
+
+        private async Task RunScheduler(CancellationToken ct)
         {
             try
             {
-                var et = GetEtTime();
-                int etMins = et.Hour * 60 + et.Minute;
-                int matched = -1;
-                foreach (var slot in FETCH_MINUTES_ET)
-                {
-                    int diff = etMins - slot;
-                    if (diff >= 0 && diff < 5) { matched = slot; break; }
-                }
-                if (matched < 0) return;
-                if (matched == _lastFetchMinuteEt) return;
-                if ((DateTime.UtcNow - _lastFetchUtc).TotalMinutes < 4) return;
+                Log("Scheduler: mount fetch");
+                await FetchOnce().ConfigureAwait(false);
+                _catchUp.MarkFetched(TLAdePublication.ExpectedKey(TLAdePublication.EtNow()));
 
-                _lastFetchMinuteEt = matched;
-                _lastFetchUtc      = DateTime.UtcNow;
-                Task.Run(() => FetchOnce());
+                while (!ct.IsCancellationRequested)
+                {
+                    try { await Task.Delay(TimeSpan.FromSeconds(60), ct).ConfigureAwait(false); }
+                    catch (TaskCanceledException) { return; }
+                    if (ct.IsCancellationRequested) return;
+                    if (!AutoFetch) continue;
+                    // A pasted string owns the chart (OnCalculate re-parses it over any fetch):
+                    // fetching behind it would only make the levels flip between the two.
+                    bool manual = !string.IsNullOrEmpty(GexDataInput);
+                    bool live = !string.IsNullOrEmpty(ApiKey);
+                    long expected = TLAdePublication.ExpectedKey(TLAdePublication.EtNow());
+                    long held = TLAdePublication.Key(_pubDateId, _pubSession);
+                    if (!manual && _catchUp.Due(live, held, expected))
+                    {
+                        Log($"Scheduler: catch-up fetch (held {_pubDateId} {_pubSession}, expected key {expected})");
+                        await FetchOnce().ConfigureAwait(false);
+                    }
+                    else if (TLAdePublication.IsStale(_isDelayedMode, _pubDateId, _pubSession, out _, out _) != _staleDrawn)
+                    {
+                        // Nothing new, but the clock moved: the STALE badge must appear or go.
+                        RedrawChart();
+                    }
+                }
             }
             catch (Exception ex)
             {
-                Log($"TryScheduledFetch ERR: {ex.Message}");
+                Log($"Scheduler EX: {ex.GetType().Name}: {ex.Message}");
             }
         }
 
@@ -378,12 +409,14 @@ namespace ATAS.Indicators.Technical
             if (string.IsNullOrEmpty(raw))
             {
                 lock (_lvlLock) { _levels.Clear(); _magnets.Clear(); }
+                _pubDateId = ""; _pubSession = ""; _pubHhmm = "";
                 Log("PARSED cleared (empty input)");
                 return;
             }
             var fresh = new List<LevelEntry>();
 
             raw = raw.Replace("\r", "").Replace("\n", "").Trim();
+            TLAdePublication.ParseMarker(raw, out _pubDateId, out _pubSession, out _pubHhmm);
 
             if (raw.StartsWith("S:", StringComparison.Ordinal))
             {
@@ -678,12 +711,18 @@ namespace ATAS.Indicators.Technical
             try
             {
                 string mode = _isDelayedMode ? "FREE" : "LIVE";
-                string txt = $" TLADe Quantum [{mode}] levels={count}";
+                bool stale = false;
+                string age = string.IsNullOrEmpty(_rawData)
+                    ? "no data yet"
+                    : TLAdePublication.Label(_isDelayedMode, _pubDateId, _pubSession, _pubHhmm,
+                        AutoFetch && !string.IsNullOrEmpty(ApiKey) && string.IsNullOrEmpty(GexDataInput), out stale);
+                _staleDrawn = stale;
+                string txt = $" TLADe Quantum [{mode}] levels={count} · {age}";
                 var sz = ctx.MeasureString(txt, _fn);
                 int x = 4, y = 22;
-                var bg = DColor.FromArgb(180, 12, 14, 22);
+                var bg = stale ? DColor.FromArgb(220, 60, 10, 10) : DColor.FromArgb(180, 12, 14, 22);
                 ctx.FillRectangle(bg, new DRect(x, y, (int)sz.Width + 8, (int)sz.Height + 4));
-                ctx.DrawString(txt, _fn, DColor.Gainsboro,
+                ctx.DrawString(txt, _fn, stale ? DColor.FromArgb(0xef, 0x44, 0x44) : DColor.Gainsboro,
                     new DRect(x + 4, y + 2, (int)sz.Width + 4, (int)sz.Height + 2), _sfL);
             }
             catch { }

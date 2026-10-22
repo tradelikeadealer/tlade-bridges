@@ -1,4 +1,4 @@
-﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.5.4 (21 October 2026)
+﻿// TLADe GEX Levels — NinjaTrader 8 — release 3.6.0 (22 October 2026)
 // Changes since 3.5.0 are in CHANGELOG.md at the root of this repository.
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
@@ -117,71 +117,291 @@ namespace NinjaTrader.NinjaScript.Indicators
 
         // ── Auto-fetch from TLADe API ──
         private static readonly string API_URL = "https://europe-west1-omggex.cloudfunctions.net/indicatorData";
-        // 6 fetch times per day (ET): ASIA 18:05, EU 02:05, PRE 08:05, RTH 09:35, OPRANGE 10:35, PWRHOUR 13:05
-        private static readonly int[] FETCH_MINUTES_ET = { 1085, 125, 485, 575, 635, 785 };
-        private int _lastFetchMinuteET = -1;
-        private DateTime _lastFetchTime = DateTime.MinValue;
 
-        private void TryAutoFetch()
+        // ── Publication age (3.6.0) ──────────────────────────────────────────────────────────
+        // The data string carries "T:<dateId>,<SESSION>,<hh:mm>;" as the first row of P: — the
+        // publication the levels come from. The chart shows it, and compares it with the
+        // publication that should exist at the current ET time: when the held one is older the
+        // chart says STALE instead of drawing Friday's levels as if they were today's (one
+        // subscriber had two charts, one on Friday's CLOSE and one on today's, 21/10/2026).
+        //
+        // PUBLICATION SCHEDULE, ET — A COPY. The canonical copy is C:\TLADe\config\sessionConfig.ts
+        // (SESSIONS[].times.NY, read by getAutopilotSchedules). NinjaScript cannot import it
+        // (CLAUDE.md Rule #12, isolated trees): if the schedule changes there, change it here too.
+        //   ASIA 18:01 the evening before (dateId = the next trading day; none on Friday evening,
+        //   Sunday 18:01 opens Monday) · EUROPE 03:15 · PRE_OPEN 08:00 · RTH_OPEN 09:30 ·
+        //   OPENING_RANGE 10:30 · CLOSE 13:00. Holidays are not modelled: on a US holiday with no
+        //   publication the chart reports STALE, which is the truth.
+        private static readonly string[] PUB_SESSIONS = { "ASIA", "EUROPE", "PRE_OPEN", "RTH_OPEN", "OPENING_RANGE", "CLOSE" };
+        private const int PUB_GRACE_MIN = 10;   // minutes past the scheduled time before a publication is expected
+        private string _pubDateId = "", _pubSession = "", _pubHhmm = "";   // from T:; empty when the string has none
+        private bool _staleDrawn = false;
+        private System.Threading.Timer _catchUpTimer;
+        private DateTime _lastFetchAttemptUtc = DateTime.MinValue;
+        private int _catchUpMisses = 0;
+        private long _freeKeyFetched = -1;
+        private bool _fetchBusy = false;
+
+        private static int PubRank(string session) { return Array.IndexOf(PUB_SESSIONS, session ?? ""); }
+
+        // Orderable key of a publication: day number * 8 + session rank; -1 when unknown.
+        private static long PubKey(string dateId, string session)
         {
-            if (!AutoFetchEnabled) return;
+            int rank = PubRank(session);
+            if (rank < 0) return -1;
+            DateTime d;
+            if (!DateTime.TryParseExact(dateId ?? "", "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out d)) return -1;
+            return (long)(d - new DateTime(2000, 1, 1)).TotalDays * 8 + rank;
+        }
 
-            // Get current ET time
-            DateTime utcNow = DateTime.UtcNow;
+        // The publication that should exist at this ET time (schedule above, plus the grace).
+        private static void ExpectedPublication(DateTime etNow, out string dateId, out string session)
+        {
+            int mins = etNow.Hour * 60 + etNow.Minute;
+            DateTime day = etNow.Date;
+            DayOfWeek dow = etNow.DayOfWeek;
+            if (dow == DayOfWeek.Saturday) { day = day.AddDays(-1); session = "CLOSE"; }
+            else if (dow == DayOfWeek.Sunday)
+            {
+                if (mins >= 18 * 60 + 1 + PUB_GRACE_MIN) { day = day.AddDays(1); session = "ASIA"; }
+                else { day = day.AddDays(-2); session = "CLOSE"; }
+            }
+            else if (mins >= 18 * 60 + 1 + PUB_GRACE_MIN)
+            {
+                if (dow == DayOfWeek.Friday) session = "CLOSE";
+                else { day = day.AddDays(1); session = "ASIA"; }
+            }
+            else if (mins >= 13 * 60 + PUB_GRACE_MIN) session = "CLOSE";
+            else if (mins >= 10 * 60 + 30 + PUB_GRACE_MIN) session = "OPENING_RANGE";
+            else if (mins >= 9 * 60 + 30 + PUB_GRACE_MIN) session = "RTH_OPEN";
+            else if (mins >= 8 * 60 + PUB_GRACE_MIN) session = "PRE_OPEN";
+            else if (mins >= 3 * 60 + 15 + PUB_GRACE_MIN) session = "EUROPE";
+            else session = "ASIA";
+            dateId = day.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+        }
+
+        private static DateTime EtNow()
+        {
             TimeZoneInfo et;
             try { et = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time"); }
-            catch { try { et = TimeZoneInfo.FindSystemTimeZoneById("America/New_York"); } catch { return; } }
-            DateTime etNow = TimeZoneInfo.ConvertTimeFromUtc(utcNow, et);
-            int etMins = etNow.Hour * 60 + etNow.Minute;
+            catch { et = TimeZoneInfo.FindSystemTimeZoneById("America/New_York"); }
+            return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, et);
+        }
 
-            // Find if we should fetch now (within 5 min window of a scheduled time)
-            int matchedSlot = -1;
-            for (int i = 0; i < FETCH_MINUTES_ET.Length; i++)
+        // Reads "T:2026-10-21,OPENING_RANGE,10:30;" out of the raw string: a row that starts right
+        // after "P:", ";" or "|" (never inside a label). Absent → the three fields stay empty.
+        private void ParsePublicationMarker(string raw)
+        {
+            _pubDateId = ""; _pubSession = ""; _pubHhmm = "";
+            int t = raw.IndexOf("T:", StringComparison.Ordinal);
+            while (t >= 0)
             {
-                int diff = etMins - FETCH_MINUTES_ET[i];
-                if (diff >= 0 && diff < 5)
+                char before = t > 0 ? raw[t - 1] : '|';
+                if (before == ':' || before == ';' || before == '|')
                 {
-                    matchedSlot = FETCH_MINUTES_ET[i];
-                    break;
+                    int end = raw.IndexOf(';', t);
+                    string body = end > t ? raw.Substring(t + 2, end - t - 2) : raw.Substring(t + 2);
+                    string[] f = body.Split(',');
+                    if (f.Length == 3 && PubKey(f[0], f[1]) >= 0)
+                    { _pubDateId = f[0]; _pubSession = f[1]; _pubHhmm = f[2]; return; }
                 }
+                t = raw.IndexOf("T:", t + 2, StringComparison.Ordinal);
             }
+        }
 
-            if (matchedSlot < 0) return;
-            if (matchedSlot == _lastFetchMinuteET) return; // already fetched this slot
-            if ((DateTime.UtcNow - _lastFetchTime).TotalMinutes < 4) return; // debounce
+        // STALE = live data whose publication is older than the one expected now. Free data is
+        // three days old by design and already wears the DELAYED banner; a string without marker
+        // cannot be judged (the label says so).
+        private bool IsStale(out string expectedDateId, out string expectedSession)
+        {
+            ExpectedPublication(EtNow(), out expectedDateId, out expectedSession);
+            if (_isDelayedMode) return false;
+            long held = PubKey(_pubDateId, _pubSession);
+            if (held < 0) return false;
+            return held < PubKey(expectedDateId, expectedSession);
+        }
 
-            _lastFetchMinuteET = matchedSlot;
-            _lastFetchTime = DateTime.UtcNow;
+        private void DrawPublicationAge()
+        {
+            if (string.IsNullOrEmpty(_prevInput)) { RemoveDrawObject("TLADeAge"); _staleDrawn = false; return; }
+            string expDate, expSession;
+            bool stale = IsStale(out expDate, out expSession);
+            _staleDrawn = stale;
+            string label = string.IsNullOrEmpty(_pubDateId)
+                ? "Levels: publication unknown (string without T: marker — copy a fresh one from the terminal)"
+                : $"Levels: {_pubDateId} {_pubSession} {_pubHhmm} ET";
+            if (stale)
+            {
+                string hint = (AutoFetchEnabled && !string.IsNullOrEmpty(ApiKey))
+                    ? "auto-fetch is retrying"
+                    : "paste the latest string from the terminal, or set your API key for auto-fetch";
+                label += $"{Environment.NewLine}STALE — expected {expDate} {expSession}; {hint}";
+            }
+            Draw.TextFixed(this, "TLADeAge", label,
+                TextPosition.BottomRight,
+                stale ? Brushes.Red : Brushes.DimGray,
+                new SimpleFont("Arial", stale ? 12 : 10),
+                Brushes.Transparent,
+                Brushes.Transparent,
+                0);
+        }
 
-            if (string.IsNullOrEmpty(ApiKey)) return; // no key = no auto-fetch (free mode fetched at startup)
-            _isDelayedMode = false; // user has key, switch to live
-
+        // One HTTP call to the cloud. Returns the data string, or null (logged) when nothing usable came back.
+        private string FetchFromCloud(bool live)
+        {
             try
             {
+                // Force TLS 1.2 — NT8 .NET 4.8 default may not negotiate HTTPS to Cloud Functions
+                System.Net.ServicePointManager.SecurityProtocol =
+                    System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls;
+
                 string ticker = IsNqFamily() ? "NDX" : "SPX";
-                string url = $"{API_URL}?ticker={ticker}";
+                // With API key → live data. Without → free delayed (3 business days back)
+                string url = live
+                    ? $"{API_URL}?ticker={ticker}"
+                    : $"{API_URL}?ticker={ticker}&mode=free";
                 HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
                 request.Method = "GET";
                 request.Timeout = 8000;
                 request.UserAgent = "TLADe-NT8/1.0";
-                request.Headers.Add("X-API-Key", ApiKey);
-
+                if (live)
+                    request.Headers.Add("X-API-Key", ApiKey);
                 using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
                 using (StreamReader reader = new StreamReader(response.GetResponseStream()))
                 {
                     string data = reader.ReadToEnd();
+                    Print($"[TLADe] fetch {ticker} ({(live ? "live" : "free")}): HTTP {(int)response.StatusCode}, bytes={data.Length}, hasL={data.Contains("L:")}");
                     if (!string.IsNullOrEmpty(data) && data.Contains("L:"))
-                    {
-                        GexDataInput = data;
-                        ParseIfChanged(force: true);
-                        _lastDrawnBar = -1; // force redraw
-                    }
+                        return data;
+                    Print($"[TLADe] body preview: {data.Substring(0, Math.Min(200, data.Length))}");
+                    return null;
                 }
             }
-            catch
+            catch (WebException wex)
             {
-                // Silent fail — fallback to manual GexDataInput
+                var http = wex.Response as HttpWebResponse;
+                string body = "";
+                if (http != null)
+                {
+                    try { using (var r = new StreamReader(http.GetResponseStream())) body = r.ReadToEnd(); } catch { }
+                }
+                Print($"[TLADe] WebException: {wex.Status} HTTP {(int?)http?.StatusCode} body={body}");
+                return null;
             }
+            catch (Exception ex)
+            {
+                Print($"[TLADe] Exception: {ex.GetType().Name} {ex.Message}");
+                return null;
+            }
+        }
+
+        // Wall-clock timer, not bars: a chart with no tick in the window, a PC back from sleep
+        // and a late publication all get their fetch within a minute of becoming due. Replaces
+        // the six fixed 5-minute slots, which a quiet chart missed and whose 02:05 ET slot fired
+        // before EUROPE is published (03:15 ET), so no chart saw EUROPE before 08:05.
+        private void StartCatchUpTimer()
+        {
+            if (_catchUpTimer != null) return;
+            _catchUpTimer = new System.Threading.Timer(_ => CatchUpTick(), null, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(60));
+        }
+
+        private void CatchUpTick()
+        {
+            try
+            {
+                if (State == State.Terminated || State == State.Finalized) return;
+                bool fetched = false;
+                if (AutoFetchEnabled && !_fetchBusy)
+                {
+                    string expDate, expSession;
+                    ExpectedPublication(EtNow(), out expDate, out expSession);
+                    long expected = PubKey(expDate, expSession);
+                    bool live = !string.IsNullOrEmpty(ApiKey);
+                    long held = PubKey(_pubDateId, _pubSession);
+                    bool due;
+                    if (live && held >= 0)
+                    {
+                        // Live with a marker: fetch while what we hold is older than what should
+                        // exist — 5 minutes apart for three tries, then every 15. A late
+                        // publication costs at most 4 calls in its first quarter hour and 4 an
+                        // hour after that, inside the 60/hour per key even with five charts.
+                        if (held >= expected) { _catchUpMisses = 0; due = false; }
+                        else
+                        {
+                            double gap = _catchUpMisses < 3 ? 5 : 15;
+                            due = (DateTime.UtcNow - _lastFetchAttemptUtc).TotalMinutes >= gap;
+                        }
+                    }
+                    else
+                    {
+                        // Free data, or a string without marker: one fetch per expected publication.
+                        due = expected != _freeKeyFetched;
+                        if (due) _freeKeyFetched = expected;
+                    }
+                    if (due)
+                    {
+                        _fetchBusy = true;
+                        _lastFetchAttemptUtc = DateTime.UtcNow;
+                        if (live) _catchUpMisses++;
+                        string data;
+                        try { data = FetchFromCloud(live); }
+                        finally { _fetchBusy = false; }
+                        if (data != null)
+                        {
+                            fetched = true;
+                            TriggerCustomEvent(o =>
+                            {
+                                GexDataInput = data;
+                                _isDelayedMode = !live;
+                                ParseIfChanged(force: true);
+                                RedrawNow();
+                            }, null);
+                        }
+                    }
+                }
+                if (!fetched)
+                {
+                    // Nothing new, but the clock moved: the STALE banner may have to appear or go.
+                    string d, s;
+                    if (IsStale(out d, out s) != _staleDrawn)
+                        TriggerCustomEvent(o => { RedrawNow(); }, null);
+                }
+            }
+            catch (Exception ex)
+            {
+                Print($"[TLADe] catch-up: {ex.GetType().Name} {ex.Message}");
+            }
+        }
+
+        // Everything OnBarUpdate draws once it has decided to draw. Also the landing point of
+        // the catch-up timer, through TriggerCustomEvent (NinjaScript thread, bar state valid).
+        private void RedrawNow()
+        {
+            UpdateThemeBrushes();
+            UpdateLabelFont();
+            _lastDrawnBar = CurrentBar;
+
+            if (ShowStatusText)
+                DrawStatus();
+
+            // Show delayed mode banner when using free data
+            if (_isDelayedMode)
+            {
+                Draw.TextFixed(this, "TLADeDelayed",
+                    "DELAYED DATA (3 days) — Subscribe at tradelikeadealer.com for live levels",
+                    TextPosition.TopRight,
+                    Brushes.Orange,
+                    new SimpleFont("Arial", 10),
+                    Brushes.Transparent,
+                    Brushes.Transparent,
+                    0);
+            }
+            else
+                RemoveDrawObject("TLADeDelayed");
+
+            DrawPublicationAge();
+            DrawAll();
+            if (ChartControl != null) ForceRefresh();
         }
 
         public override string ToString()
@@ -194,7 +414,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (State == State.SetDefaults)
             {
                 Name = "TLADe GEX";
-                Description = "TLADe GEX Levels 3.5.4 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
+                Description = "TLADe GEX Levels 3.6.0 — GEX levels + profile, Session AVWAP, Session Boxes, Breakout Structure, Confluence Zones (canonical set = the TradingView ES indicator)";
                 Calculate = Calculate.OnPriceChange;
                 IsOverlay = true;
                 DisplayInDataBox = false;
@@ -325,59 +545,34 @@ namespace NinjaTrader.NinjaScript.Indicators
                         GexDataInput = "";
                         _isDelayedMode = false;
                     }
-                    _lastFetchMinuteET = -1; // force fetch
-                    bool hasKey = hasKeyEntry;
-                    try
+                    _lastFetchAttemptUtc = DateTime.UtcNow;
+                    string data = FetchFromCloud(hasKeyEntry);
+                    if (data != null)
                     {
-                        // Force TLS 1.2 — NT8 .NET 4.8 default may not negotiate HTTPS to Cloud Functions
-                        System.Net.ServicePointManager.SecurityProtocol =
-                            System.Net.SecurityProtocolType.Tls12 | System.Net.SecurityProtocolType.Tls11 | System.Net.SecurityProtocolType.Tls;
-
-                        string ticker = IsNqFamily() ? "NDX" : "SPX";
-                        // With API key → live data. Without → free delayed (3 business days back)
-                        string url = hasKey
-                            ? $"{API_URL}?ticker={ticker}"
-                            : $"{API_URL}?ticker={ticker}&mode=free";
-                        HttpWebRequest request = (HttpWebRequest)WebRequest.Create(url);
-                        request.Method = "GET";
-                        request.Timeout = 8000;
-                        request.UserAgent = "TLADe-NT8/1.0";
-                        if (hasKey)
-                            request.Headers.Add("X-API-Key", ApiKey);
-                        using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
-                        using (StreamReader reader = new StreamReader(response.GetResponseStream()))
-                        {
-                            string data = reader.ReadToEnd();
-                            Print($"[TLADe] fetch {ticker} ({(hasKey ? "live" : "free")}): HTTP {(int)response.StatusCode}, bytes={data.Length}, hasL={data.Contains("L:")}");
-                            if (!string.IsNullOrEmpty(data) && data.Contains("L:"))
-                            {
-                                GexDataInput = data;
-                                if (!hasKey)
-                                    _isDelayedMode = true;
-                            }
-                            else
-                            {
-                                Print($"[TLADe] body preview: {data.Substring(0, Math.Min(200, data.Length))}");
-                            }
-                        }
-                    }
-                    catch (WebException wex)
-                    {
-                        var http = wex.Response as HttpWebResponse;
-                        string body = "";
-                        if (http != null)
-                        {
-                            try { using (var r = new StreamReader(http.GetResponseStream())) body = r.ReadToEnd(); } catch { }
-                        }
-                        Print($"[TLADe] WebException: {wex.Status} HTTP {(int?)http?.StatusCode} body={body}");
-                    }
-                    catch (Exception ex)
-                    {
-                        Print($"[TLADe] Exception: {ex.GetType().Name} {ex.Message}");
+                        GexDataInput = data;
+                        if (!hasKeyEntry)
+                            _isDelayedMode = true;
                     }
                 }
                 ParseIfChanged(force: true);
                 _prevSettingsSig = BuildSettingsSig();
+                // The mount fetch already served the publication expected now: the catch-up
+                // timer must not repeat it 30 seconds later in free mode.
+                {
+                    string d, s;
+                    ExpectedPublication(EtNow(), out d, out s);
+                    _freeKeyFetched = PubKey(d, s);
+                }
+                if (AutoFetchEnabled)
+                    StartCatchUpTimer();
+            }
+            else if (State == State.Terminated)
+            {
+                if (_catchUpTimer != null)
+                {
+                    _catchUpTimer.Dispose();
+                    _catchUpTimer = null;
+                }
             }
         }
 
@@ -408,11 +603,6 @@ namespace NinjaTrader.NinjaScript.Indicators
             if (EnableAlerts && State == State.Realtime && IsFirstTickOfBar && CurrentBar >= 2)
                 CheckLevelAlerts();
 
-            TryAutoFetch();
-
-            UpdateThemeBrushes();
-            UpdateLabelFont();
-
             bool inputChanged = ParseIfChanged(force: false);
 
             string sig = BuildSettingsSig();
@@ -424,25 +614,7 @@ namespace NinjaTrader.NinjaScript.Indicators
                 return;
             _flipDirty = false;
 
-            _lastDrawnBar = CurrentBar;
-
-            if (ShowStatusText)
-                DrawStatus();
-
-            // Show delayed mode banner when using free data
-            if (_isDelayedMode)
-            {
-                Draw.TextFixed(this, "TLADeDelayed",
-                    "DELAYED DATA (3 days) — Subscribe at tradelikeadealer.com for live levels",
-                    TextPosition.TopRight,
-                    Brushes.Orange,
-                    new SimpleFont("Arial", 10),
-                    Brushes.Transparent,
-                    Brushes.Transparent,
-                    0);
-            }
-
-            DrawAll();
+            RedrawNow();
         }
 
         private string BuildSettingsSig()
@@ -965,6 +1137,7 @@ namespace NinjaTrader.NinjaScript.Indicators
             _prevInput = raw;
             _levels.Clear();
             _profile.Clear();
+            ParsePublicationMarker(raw);
 
             if (string.IsNullOrEmpty(raw))
                 return true;

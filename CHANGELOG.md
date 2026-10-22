@@ -10,6 +10,46 @@ has not changed since the one below it.
 
 ## NinjaTrader 8, ATAS, MotiveWave — TLADe GEX Levels
 
+### 3.6.0 — 22 October 2026 (NinjaTrader 8, ATAS, ATAS X, MotiveWave, TradingView ES and NQ)
+
+**New — every indicator says which publication its levels come from, and STALE when it is behind.**
+A subscriber had two charts of the same instrument showing different Zero Gammas: one chart held
+Friday's CLOSE, the other today's OPENING_RANGE, and neither said so. Since 14 October the data
+string has carried `T:<date>,<session>,<hh:mm>` as the first row of the profile; no indicator read
+it. Now all of them do. The status text reads `levels: 2026-10-21 OPENING_RANGE 10:30 ET`. When
+the held publication is older than the one that should exist at the current ET time (ASIA 18:01
+the evening before, EUROPE 03:15, PRE_OPEN 08:00, RTH_OPEN 09:30, OPENING_RANGE 10:30, CLOSE
+13:00, each with ten minutes of grace) the text turns red and adds `STALE — expected 2026-10-21
+OPENING_RANGE` with what to do: on the auto-fetch platforms "auto-fetch is retrying", on
+TradingView and on a pasted string "paste the latest string from the terminal". Free (delayed)
+data is never flagged: it is three days old by design and already says so. A string without the
+marker says "publication unknown". The schedule is a copy of `config/sessionConfig.ts` in the
+TLADe repository, once per language, each copy saying so.
+
+**Changed — auto-fetch no longer waits for six fixed slots (NinjaTrader 8, ATAS, ATAS X, MotiveWave).**
+The slots (02:05, 08:05, 09:35, 10:35, 13:05, 18:05 ET) had two faults. On NinjaTrader and on the
+ATAS Quantum Field Ladder the check ran on each bar, so a chart without a tick in the five-minute
+window skipped the slot until the next one. And the 02:05 slot fired before EUROPE is published
+(03:15 ET), so no chart saw EUROPE before 08:05. Now a wall-clock timer checks once a minute
+whether the held publication is older than the expected one and fetches when it is: five minutes
+apart for three tries, then every fifteen. A late publication costs at most four calls in its first
+quarter hour and four an hour after that, inside the API limit of 60 calls per hour per key even
+with five charts open. The mount fetch is unchanged; free mode fetches once per expected
+publication. On ATAS a pasted string still owns the chart: no fetch runs behind it.
+
+Holidays are not modelled: on a US holiday with no publication the indicators report STALE, which
+is true.
+
+**Not in this release:** Quantower (community indicator by Dogan Cile) keeps its own refresh
+schedule — its DLL cannot be rebuilt here (no Quantower SDK on the build machine) and sources are
+never shipped ahead of the DLL. The TradingView Quantum Field Ladder is untouched.
+
+**Verified:** NinjaTrader compiles against 8.1.8.3 with zero errors and zero warnings; ATAS and
+ATAS X build in Release with zero errors (the warnings pre-exist); MotiveWave compiles with JDK 26
+at `--release 25` (class file 69). Not yet seen on a live chart at the time of writing; ATAS X
+cannot be tested here. The Pine scripts are published by hand in the TradingView editor, which
+validates them.
+
 ### 3.5.4 — 21 October 2026 (NinjaTrader 8 only)
 
 **New — the Call Wall and Put Wall can take your own colours.**

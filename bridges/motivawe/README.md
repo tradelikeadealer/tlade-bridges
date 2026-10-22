@@ -96,9 +96,12 @@ cp TLADeGexDashboard.jar ~/MotiveWave\ Extensions/
 
 The indicator runs entirely client-side:
 
-1. On chart open it polls our public endpoint `indicatorData?ticker=…`
-   on the six TLADe publish slots (Asia 18:01 ET / Europe 02:00 / Pre
-   08:00 / RTH 09:30 / Opening Range 10:30 / Close 16:00).
+1. On chart open it fetches our public endpoint `indicatorData?ticker=…`,
+   then checks once a minute whether the publication it holds (the `T:` row
+   of the string) is older than the one expected at the current ET time
+   (Asia 18:01 the evening before / Europe 03:15 / Pre 08:00 / RTH 09:30 /
+   Opening Range 10:30 / Close 13:00) and fetches again when it is. The
+   banner names the publication and says STALE while it is behind.
 2. The response is the same `S:|L:|P:` string used by the TradingView
    Pine — spread + level list + per-strike GEX profile.
 3. The Study draws horizontal lines per level (color-coded by type),

@@ -1,4 +1,4 @@
-// TLADe GEX Levels — MotiveWave — release 3.5.2 (13 October 2026)
+// TLADe GEX Levels — MotiveWave — release 3.6.0 (22 October 2026)
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
 // confluence zones (% of EM), silent above 1H, level-cross signals. Layout (right-edge chips,
@@ -150,10 +150,92 @@ public class TLADeGexDashboard extends Study
 
   // ---- Auto-fetch constants (mirrors NT8) ------------------------------------------------------
   private static final String API_URL = "https://europe-west1-omggex.cloudfunctions.net/indicatorData";
-  // 6 fetch times per day (ET), as minutes-of-day.
-  // ORDERED ASCENDING (= v1.3 scheduler scans for the smallest slot > nowMins).
-  // 02:05 EU, 08:05 PRE, 09:35 RTH, 10:35 OPRANGE, 13:05 PWRHOUR, 18:05 ASIA.
-  private static final int[] FETCH_MINUTES_ET = {125, 485, 575, 635, 785, 1085};
+  // ---- Publication age (3.6.0) -------------------------------------------------------------------
+  // The data string carries "T:<dateId>,<SESSION>,<hh:mm>;" as the first row of P: — the
+  // publication the levels come from. The banner shows it, and compares it with the publication
+  // that should exist at the current ET time: when the held one is older the banner says STALE
+  // instead of drawing Friday's levels as if they were today's (one subscriber had two charts,
+  // one on Friday's CLOSE and one on today's, 21/10/2026).
+  //
+  // PUBLICATION SCHEDULE, ET — A COPY. The canonical copy is C:\TLADe\config\sessionConfig.ts
+  // (SESSIONS[].times.NY, read by getAutopilotSchedules). This study cannot import it
+  // (CLAUDE.md Rule #12, isolated trees): if the schedule changes there, change it here too.
+  //   ASIA 18:01 the evening before (dateId = the next trading day; none on Friday evening,
+  //   Sunday 18:01 opens Monday) · EUROPE 03:15 · PRE_OPEN 08:00 · RTH_OPEN 09:30 ·
+  //   OPENING_RANGE 10:30 · CLOSE 13:00. Holidays are not modelled: on a US holiday with no
+  //   publication the banner reports STALE, which is the truth.
+  private static final String[] PUB_SESSIONS = {"ASIA", "EUROPE", "PRE_OPEN", "RTH_OPEN", "OPENING_RANGE", "CLOSE"};
+  private static final int PUB_GRACE_MIN = 10;   // minutes past the scheduled time before a publication is expected
+
+  private static int pubRank(String session)
+  {
+    if (session == null) return -1;
+    for (int i = 0; i < PUB_SESSIONS.length; i++) if (PUB_SESSIONS[i].equals(session)) return i;
+    return -1;
+  }
+
+  /** Orderable key of a publication: day number * 8 + session rank; -1 when unknown. */
+  private static long pubKey(String dateId, String session)
+  {
+    int rank = pubRank(session);
+    if (rank < 0 || dateId == null) return -1;
+    try {
+      java.time.LocalDate d = java.time.LocalDate.parse(dateId);
+      return d.toEpochDay() * 8 + rank;
+    } catch (Exception e) { return -1; }
+  }
+
+  /** The publication that should exist at this ET time: {dateId, session}. */
+  private static String[] pubExpected(java.time.ZonedDateTime etNow)
+  {
+    int mins = etNow.getHour() * 60 + etNow.getMinute();
+    java.time.LocalDate day = etNow.toLocalDate();
+    java.time.DayOfWeek dow = etNow.getDayOfWeek();
+    String session;
+    if (dow == java.time.DayOfWeek.SATURDAY) { day = day.minusDays(1); session = "CLOSE"; }
+    else if (dow == java.time.DayOfWeek.SUNDAY) {
+      if (mins >= 18 * 60 + 1 + PUB_GRACE_MIN) { day = day.plusDays(1); session = "ASIA"; }
+      else { day = day.minusDays(2); session = "CLOSE"; }
+    }
+    else if (mins >= 18 * 60 + 1 + PUB_GRACE_MIN) {
+      if (dow == java.time.DayOfWeek.FRIDAY) session = "CLOSE";
+      else { day = day.plusDays(1); session = "ASIA"; }
+    }
+    else if (mins >= 13 * 60 + PUB_GRACE_MIN) session = "CLOSE";
+    else if (mins >= 10 * 60 + 30 + PUB_GRACE_MIN) session = "OPENING_RANGE";
+    else if (mins >= 9 * 60 + 30 + PUB_GRACE_MIN) session = "RTH_OPEN";
+    else if (mins >= 8 * 60 + PUB_GRACE_MIN) session = "PRE_OPEN";
+    else if (mins >= 3 * 60 + 15 + PUB_GRACE_MIN) session = "EUROPE";
+    else session = "ASIA";
+    return new String[] { day.toString(), session };
+  }
+
+  /** ET now, or null when the JVM cannot resolve the zone (seen on macOS Java 25): then the
+   *  age cannot be judged and both the STALE banner and the catch-up fetch stand down. */
+  private static java.time.ZonedDateTime etNowOrNull()
+  {
+    try { return java.time.ZonedDateTime.now(java.time.ZoneId.of("America/New_York")); }
+    catch (Throwable t) { return null; }
+  }
+
+  /** Reads "T:2026-10-21,OPENING_RANGE,10:30;" out of the raw string: a row that starts right
+   *  after "P:", ";" or "|" (never inside a label). Returns {dateId, session, hhmm} or null. */
+  private static String[] pubMarker(String raw)
+  {
+    if (raw == null) return null;
+    int t = raw.indexOf("T:");
+    while (t >= 0) {
+      char before = t > 0 ? raw.charAt(t - 1) : '|';
+      if (before == ':' || before == ';' || before == '|') {
+        int end = raw.indexOf(';', t);
+        String body = end > t ? raw.substring(t + 2, end) : raw.substring(t + 2);
+        String[] f = body.split(",", -1);
+        if (f.length == 3 && pubKey(f[0], f[1]) >= 0) return f;
+      }
+      t = raw.indexOf("T:", t + 2);
+    }
+    return null;
+  }
 
   // ---- Parsed model ----------------------------------------------------------------------------
   private static class LevelEntry
@@ -262,14 +344,22 @@ public class TLADeGexDashboard extends Study
   // maybeScheduleFetch() that was wired into calculateValues/onBarUpdate
   // and silently skipped slots when no tick arrived in the 5-minute
   // matching window (= cash-index charts pre-RTH, futures quiet hours).
-  // The new path schedules exactly 7 fetches per trading day (1 mount + 6
-  // absolute ET slots) regardless of tick activity.
+  // 3.6.0 — no fixed slots any more: once a minute the scheduler asks whether
+  // the held publication is older than the one expected now, and fetches if
+  // so (5 minutes apart for three tries, then every 15). Covers a PC back
+  // from sleep, a failed fetch and the old 02:05 slot that fired before
+  // EUROPE is published (03:15 ET), which left every chart on ASIA until 08:05.
   private volatile java.util.concurrent.ScheduledExecutorService scheduler;
   private volatile String fetchedData = null; // set by background thread, consumed on next calc
-  private int lastFetchMinuteET = -1;
-  private long lastFetchTimeMs = 0L;
   private boolean delayedMode = false;
   private volatile boolean fetchInFlight = false;
+  // Publication the parsed levels come from (T: row); empty when the string has none.
+  private volatile String pubDateId = "", pubSession = "", pubHhmm = "";
+  private volatile boolean staleShown = false;
+  // Catch-up bookkeeping (scheduler thread only).
+  private long catchUpLastAttemptMs = 0L;
+  private int catchUpMisses = 0;
+  private long freeKeyFetched = -1L;
 
   // Effective GEX data string actually parsed: the latest fetched payload when
   // present, otherwise the manually pasted GEX_DATA setting. Held in a field so a
@@ -440,8 +530,6 @@ public class TLADeGexDashboard extends Study
     levels.clear();
     profile.clear();
     fetchedData = null;
-    lastFetchMinuteET = -1;
-    lastFetchTimeMs = 0L;
     fetchInFlight = false;
     initialFetchKicked = false;
     lastFetchError = null;
@@ -486,23 +574,72 @@ public class TLADeGexDashboard extends Study
   {
     java.util.concurrent.ScheduledExecutorService s = scheduler;
     if (s == null) return;
-    long delayMs = msUntilNextSlot();
     s.schedule(() -> {
       try {
-        if (getSettings().getBoolean(AUTO_FETCH, true)) {
-          // Resolve which slot just fired. On some macOS Java 25 runtimes
-          // ZoneId.of("America/New_York") throws (tzdata missing/sandboxed),
-          // the previous swallow left lastFetchMinuteET unwritten and the
-          // banner rendered "updated — ET" indefinitely (Prince, 2026-07-01).
-          int etMins = nowETMinutesWithFallback();
-          if (etMins >= 0) lastFetchMinuteET = etMins;
-          lastFetchTimeMs = System.currentTimeMillis();
-          startFetch(false);
-        }
+        catchUpTick();
+      } catch (Throwable t) {
+        System.err.println("[TLADe] catch-up tick failed: " + t);
       } finally {
-        scheduleNextFetch(); // chain to next absolute slot
+        scheduleNextFetch(); // once a minute, for as long as the study lives
       }
-    }, delayMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+    }, 60_000L, java.util.concurrent.TimeUnit.MILLISECONDS);
+  }
+
+  /** Once a minute: fetch when the held publication is older than the expected one; otherwise
+   *  make sure the banner reflects the clock (STALE appears or goes without any fetch). */
+  private void catchUpTick()
+  {
+    if (!getSettings().getBoolean(AUTO_FETCH, true)) return;
+    java.time.ZonedDateTime etNow = etNowOrNull();
+    if (etNow == null) return;
+    String[] exp = pubExpected(etNow);
+    long expected = pubKey(exp[0], exp[1]);
+    boolean hasKey = !getSettings().getString(API_KEY, "").trim().isEmpty();
+    long held = pubKey(pubDateId, pubSession);
+    boolean due;
+    long nowMs = System.currentTimeMillis();
+    if (hasKey && held >= 0) {
+      // Live with a marker: fetch while what we hold is older than what should exist —
+      // 5 minutes apart for three tries, then every 15. A late publication costs at most
+      // 4 calls in its first quarter hour and 4 an hour after that, inside the 60/hour
+      // per key even with five charts.
+      if (held >= expected) { catchUpMisses = 0; due = false; }
+      else {
+        long gapMs = (catchUpMisses < 3 ? 5 : 15) * 60_000L;
+        due = nowMs - catchUpLastAttemptMs >= gapMs;
+        if (due) catchUpMisses++;
+      }
+    } else {
+      // Free data, or a string without marker: one fetch per expected publication.
+      due = expected != freeKeyFetched;
+      if (due) freeKeyFetched = expected;
+    }
+    if (due) {
+      catchUpLastAttemptMs = nowMs;
+      startFetch(false);
+      return;
+    }
+    if (isStale() != staleShown) {
+      DataContext c = lastCtx;
+      if (c != null) recalculate(c);
+      else notifyRedraw();
+    }
+  }
+
+  /** STALE = live data whose publication is older than the one expected now. Free data is
+   *  three days old by design and already says DELAYED; a string without marker cannot be
+   *  judged (the banner says so). Returns {dateId, session} of the expected one via the field. */
+  private volatile String[] expectedNow = null;
+  private boolean isStale()
+  {
+    java.time.ZonedDateTime etNow = etNowOrNull();
+    if (etNow == null) { expectedNow = null; return false; }
+    String[] exp = pubExpected(etNow);
+    expectedNow = exp;
+    if (delayedMode) return false;
+    long held = pubKey(pubDateId, pubSession);
+    if (held < 0) return false;
+    return held < pubKey(exp[0], exp[1]);
   }
 
   /** Return current ET minute-of-day, falling back to a manual UTC offset
@@ -535,26 +672,6 @@ public class TLADeGexDashboard extends Study
     } catch (Throwable t) {
       return -1;
     }
-  }
-
-  private static long msUntilNextSlot()
-  {
-    java.time.ZonedDateTime et;
-    try { et = java.time.ZonedDateTime.now(java.time.ZoneId.of("America/New_York")); }
-    catch (Exception e) { return 60_000L; } // fallback: try again in 1 min
-    int nowMins = et.getHour() * 60 + et.getMinute();
-    int nextDiffMins = -1;
-    for (int slot : FETCH_MINUTES_ET) {
-      if (slot > nowMins) { nextDiffMins = slot - nowMins; break; }
-    }
-    if (nextDiffMins < 0) {
-      // No more slots today → wrap to first slot tomorrow.
-      nextDiffMins = (1440 - nowMins) + FETCH_MINUTES_ET[0];
-    }
-    long ms = (long) nextDiffMins * 60_000L
-            - (long) et.getSecond() * 1000L
-            + 1000L; // 1s buffer so we land just after the slot boundary
-    return Math.max(1000L, ms);
   }
 
   // ================================================================================================
@@ -601,8 +718,7 @@ public class TLADeGexDashboard extends Study
     }
 
     // v1.3 — Fetch lifecycle is now owned by the absolute-time scheduler
-    // (onLoad → startScheduler). The legacy maybeScheduleFetch() below is
-    // kept as dead code; calculateValues no longer drives fetches.
+    // (onLoad → startScheduler); calculateValues no longer drives fetches.
 
     // Effective data: fetched payload if we have one, else the manual paste.
     String dataStr = (lastData != null) ? lastData : getSettings().getString(GEX_DATA, "");
@@ -660,14 +776,30 @@ public class TLADeGexDashboard extends Study
     String bottom = lastFetchError != null
         ? "ERR: " + lastFetchError
         : "updated " + lastFetchEt + " ET";
+    // 3.6.0 — which publication the levels come from, and STALE when a newer one should exist.
+    boolean stale = isStale();
+    staleShown = stale;
+    String age = dataStr == null || dataStr.trim().isEmpty()
+        ? "no data yet"
+        : pubDateId.isEmpty()
+            ? "levels: publication unknown (string without T: marker — copy a fresh one from the terminal)"
+            : "levels: " + pubDateId + " " + pubSession + " " + pubHhmm + " ET";
+    String[] exp = expectedNow;
+    if (stale && exp != null) {
+      boolean autoLive = hasKey && getSettings().getBoolean(AUTO_FETCH, true);
+      age += "\nSTALE — expected " + exp[0] + " " + exp[1] + "; "
+           + (autoLive ? "auto-fetch is retrying" : "paste the latest string from the terminal, or set your API key for auto-fetch");
+    }
     statusText = String.format(Locale.ROOT,
         "TLADe GEX · %s\n"
       + "%s%s · %d levels\n"
+      + "%s\n"
       + "%s",
         ticker,
         mode, fetching ? " · fetching…" : "",
         drawLevels.size(),
-        bottom);
+        bottom,
+        age);
   }
 
   /** Latest non-NaN close. */
@@ -938,6 +1070,10 @@ public class TLADeGexDashboard extends Study
     profile.clear();
 
     String raw = (input == null ? "" : input).replace("\r", "").replace("\n", "").trim();
+    String[] marker = pubMarker(raw);
+    pubDateId = marker != null ? marker[0] : "";
+    pubSession = marker != null ? marker[1] : "";
+    pubHhmm = marker != null ? marker[2] : "";
     if (raw.isEmpty()) return;
 
     // v7.1: optional "S:<spread>|..." prefix overrides the ES-SPX spread setting.
@@ -1620,38 +1756,19 @@ public class TLADeGexDashboard extends Study
   // Auto-fetch (background thread; never blocks calc/draw)
   // ================================================================================================
 
-  /** Check the ET clock and fire a background fetch inside a scheduled window. */
-  private void maybeScheduleFetch()
-  {
-    if (!getSettings().getBoolean(AUTO_FETCH, true)) return;
-
-    java.time.ZonedDateTime etNow;
-    try {
-      etNow = java.time.ZonedDateTime.now(java.time.ZoneId.of("America/New_York"));
-    } catch (Exception e) { return; }
-    int etMins = etNow.getHour() * 60 + etNow.getMinute();
-
-    int matchedSlot = -1;
-    for (int slot : FETCH_MINUTES_ET) {
-      int diff = etMins - slot;
-      if (diff >= 0 && diff < 5) { matchedSlot = slot; break; }
-    }
-    if (matchedSlot < 0) return;
-    if (matchedSlot == lastFetchMinuteET) return;
-    if (System.currentTimeMillis() - lastFetchTimeMs < 4 * 60 * 1000L) return; // debounce
-
-    lastFetchMinuteET = matchedSlot;
-    lastFetchTimeMs = System.currentTimeMillis();
-    startFetch(false);
-  }
-
-  /** Spawn a daemon thread to GET the data; result lands in {@link #fetchedData}. */
+  /** Spawn a daemon thread to GET the data; result lands in {@link #fetchedData}.
+   *  3.6.0 — whether a timed fetch is due (live: held older than expected; free: one per
+   *  expected publication) is decided by catchUpTick(), so no key gate here any more. */
   private void startFetch(boolean startup)
   {
     if (fetchInFlight) return;
     final boolean hasKey = !getSettings().getString(API_KEY, "").trim().isEmpty();
-    // On a timed (non-startup) fetch, require a key (free mode is fetched once at startup).
-    if (!startup && !hasKey) return;
+    if (startup) {
+      // The mount fetch serves the publication expected now: the first tick must not repeat it.
+      java.time.ZonedDateTime etNow = etNowOrNull();
+      if (etNow != null) { String[] exp = pubExpected(etNow); freeKeyFetched = pubKey(exp[0], exp[1]); }
+      catchUpLastAttemptMs = System.currentTimeMillis();
+    }
 
     final String ticker = isNqFamily() ? "NDX" : "SPX";
     final String apiKey = getSettings().getString(API_KEY, "").trim();

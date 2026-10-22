@@ -18,7 +18,9 @@
 //
 //  ARCHITECTURE:
 //    1. Auto-fetch from TLADe Cloud Functions (X-API-Key, mode=free fallback).
-//    2. 6 fetch windows ET/day.
+//    2. Fetch at mount, then whenever the held publication is older than the one
+//       expected now (TLAdePublication.cs); the status badge names the publication
+//       and says STALE when it is behind.
 //    3. Manual paste fallback (GexDataInput).
 //    4. Parse S:|L:|P: string -> _levels.
 //    5. OnRender draws horizontal lines + labels + axis markers.
@@ -36,7 +38,7 @@
 //    PDH/PDL/PWH/PWL=Structure
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// TLADe GEX Levels — ATAS — release 3.5.2 (13 October 2026)
+// TLADe GEX Levels — ATAS — release 3.6.0 (22 October 2026)
 // Canonical feature set = the TradingView ES indicator: same names, colours, line styles, wall-flip
 // rule (two 5-minute closes), breakout rule (closed bars, opposite-bar invalidation, keep last N),
 // confluence zones (% of EM), profile bars, themes, silent above 1H, level-cross alerts.
@@ -98,12 +100,10 @@ namespace ATAS.Indicators.Technical
         };
         private const string API_URL =
             "https://europe-west1-omggex.cloudfunctions.net/indicatorData";
-        // Slot ET — minuti dalla mezzanotte ET, ORDINATO ASCENDENTE.
-        // L'ordering è critico per TimeUntilNextSlot (v3.1 scheduler), che
-        // itera e breakja sul primo slot > nowMins. Se non ordinato, salta
-        // tutti gli slot dello stesso giorno e va al successivo "futures day".
-        // 125=02:05 EU, 485=08:05 PRE, 575=09:35 RTH, 635=10:35 OR, 785=13:05 CLOSE, 1085=18:05 ASIA.
-        private static readonly int[] FETCH_MINUTES_ET = { 125, 485, 575, 635, 785, 1085 };
+        // 3.6.0 — publication age and catch-up fetch: TLAdePublication.cs (shared with the Ladder).
+        private string _pubDateId = "", _pubSession = "", _pubHhmm = "";   // from T:; empty when the string has none
+        private bool _staleDrawn = false;
+        private readonly TLAdeCatchUp _catchUp = new TLAdeCatchUp();
 
         // profile (P:) rows, wall flips, drawn levels for the alerts, index→ETF ratio
         private struct ProfileEntry { public double RawStrike, Value; public int Sign; }
@@ -132,14 +132,10 @@ namespace ATAS.Indicators.Technical
 
         private string   _rawData            = "";
         private bool     _isDelayedMode      = false;
-        private int      _lastFetchMinuteEt  = -1;
-        private DateTime _lastFetchUtc       = DateTime.MinValue;
         private bool     _initialFetchTried  = false;
-        // v3.1 — Scheduler indipendente dai tick. Six absolute ET slots/day
-        // + 1 fetch al mount = 7 chiamate/giorno deterministiche. Sostituisce
-        // il legacy tick-driven path che falliva silenziosamente nelle finestre
-        // pre-RTH quando il chart non riceveva tick (cash index, futures
-        // quiet hours, weekend). See TryScheduledFetch — kept as dead code.
+        // v3.1 — scheduler independent from ticks (fires with zero ticks: cash index out of RTH,
+        // quiet hours, weekend). 3.6.0 — it no longer waits for fixed slots: once a minute it asks
+        // whether the held publication is older than the one expected now (TLAdeCatchUp).
         private CancellationTokenSource _schedulerCts;
 
         // v3.1.1 — Session AVWAP local compute (= mirrors the Pine indicator).
@@ -601,10 +597,9 @@ namespace ATAS.Indicators.Technical
             if (!AutoFetch) return;
             _schedulerCts?.Cancel();
             _schedulerCts = new CancellationTokenSource();
-            // 1 immediate fetch at mount + 6 scheduled fetches/day at absolute
-            // ET slots. Independent from OnCalculate tick rate — fires even
-            // when the chart receives zero ticks (cash index out of RTH,
-            // futures quiet hours, weekend).
+            // 1 immediate fetch at mount, then a wall-clock check every minute. Independent from
+            // the OnCalculate tick rate — fires even when the chart receives zero ticks (cash
+            // index out of RTH, futures quiet hours, weekend, PC back from sleep).
             _ = RunScheduler(_schedulerCts.Token);
         }
 
@@ -623,49 +618,36 @@ namespace ATAS.Indicators.Technical
                 // Mount fetch first.
                 Log("Scheduler: mount fetch");
                 await FetchOnce().ConfigureAwait(false);
+                _catchUp.MarkFetched(TLAdePublication.ExpectedKey(TLAdePublication.EtNow()));
 
                 while (!ct.IsCancellationRequested)
                 {
-                    var delay = TimeUntilNextSlot(GetEtTime());
-                    Log($"Scheduler: sleeping {delay.TotalMinutes:F1}min until next ET slot");
-                    try { await Task.Delay(delay, ct).ConfigureAwait(false); }
+                    try { await Task.Delay(TimeSpan.FromSeconds(60), ct).ConfigureAwait(false); }
                     catch (TaskCanceledException) { return; }
                     if (ct.IsCancellationRequested) return;
-                    if (!AutoFetch) { Log("Scheduler: AutoFetch off — pausing 5min"); await Task.Delay(TimeSpan.FromMinutes(5), ct).ConfigureAwait(false); continue; }
-                    Log("Scheduler: scheduled fetch");
-                    await FetchOnce().ConfigureAwait(false);
+                    if (!AutoFetch) continue;
+                    // A pasted string owns the chart (OnCalculate re-parses it over any fetch):
+                    // fetching behind it would only make the levels flip between the two.
+                    bool manual = !string.IsNullOrEmpty(GexDataInput);
+                    bool live = !string.IsNullOrEmpty(ApiKey);
+                    long expected = TLAdePublication.ExpectedKey(TLAdePublication.EtNow());
+                    long held = TLAdePublication.Key(_pubDateId, _pubSession);
+                    if (!manual && _catchUp.Due(live, held, expected))
+                    {
+                        Log($"Scheduler: catch-up fetch (held {_pubDateId} {_pubSession}, expected key {expected})");
+                        await FetchOnce().ConfigureAwait(false);
+                    }
+                    else if (TLAdePublication.IsStale(_isDelayedMode, _pubDateId, _pubSession, out _, out _) != _staleDrawn)
+                    {
+                        // Nothing new, but the clock moved: the STALE badge must appear or go.
+                        RedrawChart();
+                    }
                 }
             }
             catch (Exception ex)
             {
                 Log($"Scheduler EX: {ex.GetType().Name}: {ex.Message}");
             }
-        }
-
-        // Minutes until the next ET fetch slot. If we're past the last slot of
-        // the day, wraps to the first slot of the next day. Adds a 1s buffer so
-        // we land *just after* the slot boundary and the cloud has it ready.
-        private TimeSpan TimeUntilNextSlot(DateTime nowEt)
-        {
-            int nowMins = nowEt.Hour * 60 + nowEt.Minute;
-            int? next = null;
-            foreach (var slot in FETCH_MINUTES_ET)
-            {
-                if (slot > nowMins) { next = slot; break; }
-            }
-            int diffMins;
-            if (next.HasValue)
-            {
-                diffMins = next.Value - nowMins;
-            }
-            else
-            {
-                // No more slots today — wrap to first slot of next day.
-                diffMins = (1440 - nowMins) + FETCH_MINUTES_ET[0];
-            }
-            return TimeSpan.FromMinutes(diffMins)
-                 - TimeSpan.FromSeconds(nowEt.Second)
-                 + TimeSpan.FromSeconds(1);
         }
 
         // ──────────────────────────────────────────────────────────────────────
@@ -821,32 +803,6 @@ namespace ATAS.Indicators.Technical
             }
         }
 
-        private void TryScheduledFetch()
-        {
-            try
-            {
-                var et = GetEtTime();
-                int etMins = et.Hour * 60 + et.Minute;
-                int matched = -1;
-                foreach (var slot in FETCH_MINUTES_ET)
-                {
-                    int diff = etMins - slot;
-                    if (diff >= 0 && diff < 5) { matched = slot; break; }
-                }
-                if (matched < 0) return;
-                if (matched == _lastFetchMinuteEt) return;
-                if ((DateTime.UtcNow - _lastFetchUtc).TotalMinutes < 4) return;
-
-                _lastFetchMinuteEt = matched;
-                _lastFetchUtc      = DateTime.UtcNow;
-                Task.Run(() => FetchOnce());
-            }
-            catch (Exception ex)
-            {
-                Log($"TryScheduledFetch ERR: {ex.Message}");
-            }
-        }
-
         private static DateTime GetEtTime()
         {
             try
@@ -993,12 +949,14 @@ namespace ATAS.Indicators.Technical
             if (string.IsNullOrEmpty(raw))
             {
                 lock (_lvlLock) _levels.Clear();
+                _pubDateId = ""; _pubSession = ""; _pubHhmm = "";
                 Log("PARSED cleared (empty input)");
                 return;
             }
             var fresh = new List<LevelEntry>();
 
             raw = raw.Replace("\r", "").Replace("\n", "").Trim();
+            TLAdePublication.ParseMarker(raw, out _pubDateId, out _pubSession, out _pubHhmm);
 
             if (raw.StartsWith("S:", StringComparison.Ordinal))
             {
@@ -1477,12 +1435,18 @@ namespace ATAS.Indicators.Technical
             try
             {
                 string mode = _isDelayedMode ? "FREE" : "LIVE";
-                string txt = $" TLADe GEX [{mode}] levels={count}";
+                bool stale = false;
+                string age = string.IsNullOrEmpty(_rawData)
+                    ? "no data yet"
+                    : TLAdePublication.Label(_isDelayedMode, _pubDateId, _pubSession, _pubHhmm,
+                        AutoFetch && !string.IsNullOrEmpty(ApiKey) && string.IsNullOrEmpty(GexDataInput), out stale);
+                _staleDrawn = stale;
+                string txt = $" TLADe GEX [{mode}] levels={count} · {age}";
                 var sz = ctx.MeasureString(txt, _fn);
                 int x = 4, y = 4;
-                var bg = DColor.FromArgb(180, 12, 14, 22);
+                var bg = stale ? DColor.FromArgb(220, 60, 10, 10) : DColor.FromArgb(180, 12, 14, 22);
                 ctx.FillRectangle(bg, new DRect(x, y, (int)sz.Width + 8, (int)sz.Height + 4));
-                ctx.DrawString(txt, _fn, DColor.Gainsboro,
+                ctx.DrawString(txt, _fn, stale ? DColor.FromArgb(0xef, 0x44, 0x44) : DColor.Gainsboro,
                     new DRect(x + 4, y + 2, (int)sz.Width + 4, (int)sz.Height + 2), _sfL);
             }
             catch { }
