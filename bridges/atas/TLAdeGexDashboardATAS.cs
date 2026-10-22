@@ -1544,7 +1544,20 @@ namespace ATAS.Indicators.Technical
                     var bg = DColor.FromArgb(180, color.R, color.G, color.B);
                     int lx = lastValidX + 2;
                     int ly = lastValidY - (int)sz.Height / 2;
-                    ctx.FillRectangle(bg, new DRect(lx, ly, (int)sz.Width + 4, (int)sz.Height + 2));
+                    // Same collision pass as the level labels (HL): the AVWAP line keeps its end
+                    // point, its label takes the first free slot and is registered so the level
+                    // labels drawn after it stay off it (22/10/2026, the "7722 Put Wall" over "AVWAP EU").
+                    int bw = (int)sz.Width + 4, bh = (int)sz.Height + 2;
+                    var box = new DRect(lx, ly, bw, bh);
+                    for (int step = 1; step <= 8 && _labelBoxes.Exists(b => b.IntersectsWith(box)); step++)
+                    {
+                        int k = (step + 1) / 2;
+                        int dy = (step % 2 == 1) ? k * (bh + 2) : -k * (bh + 2);
+                        box = new DRect(lx, ly + dy, bw, bh);
+                    }
+                    _labelBoxes.Add(box);
+                    ly = box.Y;
+                    ctx.FillRectangle(bg, new DRect(lx, ly, bw, bh));
                     ctx.DrawString(txt, _fn, DColor.Black,
                         new DRect(lx + 2, ly + 1, (int)sz.Width + 2, (int)sz.Height + 2), _sfL);
                 }
