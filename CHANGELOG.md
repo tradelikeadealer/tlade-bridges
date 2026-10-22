@@ -17,6 +17,14 @@ the other (a subscriber on ATAS X, Mac, 22/10). The line stays at its price; the
 to the first free slot — below the line, then above, then further out — the same outcome as the
 terminal, whose axis labels never overlap. DLLs rebuilt and committed.
 
+**ATAS — the profile bar is the terminal's bar.** The length of a profile bar was |net GEX| over a
+fixed user scale ("Profile scale max" 10), so two charts of the same chain could show the same wall
+with different bars, and none matched the terminal. Now it is the terminal's rule (LWChart
+GexProfilePrimitive, the canonical copy): length = |net| / the chain's own max, minimum 2 px,
+alpha 0.40 + ratio × 0.45; strikes that are not drawn walls are grey at 40%. "Profile scale max" is
+0 = automatic (set a number to force a scale). "Scale wall lines by magnitude" is now off by default:
+the terminal draws every level full width and lets the profile bar carry the size.
+
 **TradingView — Worldlines H1, as the terminal draws them.** The AVWAP displacement lines of the
 terminal are now in the ES and NQ scripts, a copy of the client engine's rule: a closed H1 that
 breaks the previous H1's high or low with the body doing more than the wick, confirmed by the gap

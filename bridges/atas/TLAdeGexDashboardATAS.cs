@@ -272,7 +272,7 @@ namespace ATAS.Indicators.Technical
         public bool ShowProfileBars { get; set; } = true;
         [Display(Name = "Profile width (px)", GroupName = "8. Profile", Order = 1)] public int ProfileWidthPx { get; set; } = 120;
         [Display(Name = "Profile bar height (ticks)", GroupName = "8. Profile", Order = 2)] public int ProfileBarHeightTicks { get; set; } = 8;
-        [Display(Name = "Profile scale max", GroupName = "8. Profile", Order = 3)] public double ProfileScaleMax { get; set; } = 10.0;
+        [Display(Name = "Profile scale max (0 = the chain's own max, as the terminal)", GroupName = "8. Profile", Order = 3)] public double ProfileScaleMax { get; set; } = 0.0;
 
         [Display(Name = "Show Session Boxes", GroupName = "8b. Session Boxes", Order = 0)] public bool ShowSessionBoxes { get; set; } = false;
         [Display(Name = "Asia (18:00-03:00 ET)", GroupName = "8b. Session Boxes", Order = 1)] public bool ShowBoxAsia { get; set; } = true;
@@ -374,8 +374,8 @@ namespace ATAS.Indicators.Technical
         public Color LabelBgBelow { get; set; } = Rgb(0x16, 0xa3, 0x4a); // brighter green
 
         [Display(Name = "Scale wall lines by magnitude", GroupName = "5. Style", Order = 4,
-                 Description = "CW/PW: line length is proportional to magnitude. System levels (ZG/MP/EM/VB/structure) stay full width.")]
-        public bool ScaleWallsByMag { get; set; } = true;
+                 Description = "CW/PW: line length is proportional to magnitude. System levels (ZG/MP/EM/VB/structure) stay full width. Off by default since 3.6.1: the terminal draws every level full width and lets the profile bar carry the size.")]
+        public bool ScaleWallsByMag { get; set; } = false;
 
         [Display(Name = "Wall line max width (% chart)", GroupName = "5. Style", Order = 5)]
         [Range(10, 100)]
@@ -1085,7 +1085,13 @@ namespace ATAS.Indicators.Technical
                 if (ShowSessionBoxes)
                     DrawSessionBoxes(ctx);
                 if (ShowProfileBars && prof.Count > 0)
-                    DrawProfileBars(ctx, prof, x2);
+                {
+                    // active = the walls this chart draws (the terminal's "named price line" set)
+                    var activeStrikes = new HashSet<long>();
+                    foreach (var l in snap)
+                        if (IsGex(l.Type)) activeStrikes.Add((long)Math.Round(ConvertPrice(l.RawStrike) * 100));
+                    DrawProfileBars(ctx, prof, x2, activeStrikes);
+                }
                 if (ShowConfluence)
                     DrawConfluenceZones(ctx, snap, x1, x2);
                 ComputeWallFlips(CurrentBar, snap);
@@ -1379,23 +1385,33 @@ namespace ATAS.Indicators.Technical
         }
 
         // GEX profile: a right-edge histogram of the P: rows, calls one colour and puts the other.
-        private void DrawProfileBars(RenderContext ctx, List<ProfileEntry> prof, int x2)
+        // THE SAME BAR AS THE TERMINAL (3.6.1). Canonical copy: terminal/components/LWChart.tsx,
+        // GexProfilePrimitive "NET GEX" — length = |net| / max|net| of the whole profile (min 2 px),
+        // alpha 0.40 + ratio × 0.45; a strike that is not one of the drawn walls is "inactive": grey
+        // and 40% of the alpha. Until 3.6.0 the length was |net| / a fixed user scale, so two
+        // charts of the same chain could show the same wall with different bars.
+        private void DrawProfileBars(RenderContext ctx, List<ProfileEntry> prof, int x2, HashSet<long> activeStrikes)
         {
             try
             {
-                double maxAbs = Math.Max(1e-9, ProfileScaleMax);
+                double maxAbs = ProfileScaleMax > 0 ? ProfileScaleMax : 0;
+                if (maxAbs <= 0) foreach (var pr in prof) maxAbs = Math.Max(maxAbs, Math.Abs(pr.Value));
+                if (maxAbs <= 0) return;
                 double tick = (double)(InstrumentInfo?.TickSize ?? 0.25m);
                 int barH = Math.Max(2, Math.Abs(ChartInfo.GetYByPrice((decimal)(0.0), false) - ChartInfo.GetYByPrice((decimal)(tick * Math.Max(1, ProfileBarHeightTicks)), false)));
                 int widthPx = Math.Max(10, ProfileWidthPx);
+                var inactiveC = DColor.FromArgb(148, 163, 184);
                 foreach (var pr in prof)
                 {
-                    double frac = Math.Min(1.0, Math.Abs(pr.Value) / maxAbs);
-                    if (frac <= 0) continue;
+                    if (pr.Value == 0) continue;
+                    double ratio = Math.Min(1.0, Math.Abs(pr.Value) / maxAbs);
                     double y = ConvertPrice(pr.RawStrike);
                     int yPix = ChartInfo.GetYByPrice((decimal)y, false);
-                    int len = (int)Math.Round(frac * widthPx);
-                    var baseC = pr.Sign >= 0 ? _negColor : _posColor;   // calls = neg colour, puts = pos colour (as the Pine profile)
-                    byte alpha = (byte)Math.Clamp((int)Math.Round(255.0 * (0.20 + frac * 0.50)), 0, 255);
+                    int len = Math.Max(2, (int)Math.Round(ratio * widthPx));
+                    bool active = activeStrikes == null || activeStrikes.Contains((long)Math.Round(y * 100));
+                    var baseC = !active ? inactiveC : (pr.Sign >= 0 ? _negColor : _posColor);   // calls = neg colour, puts = pos colour (as the Pine profile)
+                    double a = (0.40 + ratio * 0.45) * (active ? 1.0 : 0.4);
+                    byte alpha = (byte)Math.Clamp((int)Math.Round(255.0 * a), 0, 255);
                     ctx.FillRectangle(DColor.FromArgb(alpha, baseC.R, baseC.G, baseC.B), new DRect(x2 - len, yPix - barH / 2, len, Math.Max(1, barH)));
                 }
             }
