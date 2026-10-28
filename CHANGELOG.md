@@ -8,6 +8,35 @@ has not changed since the one below it.
 
 ---
 
+## Sierra Chart — new, beta
+
+### 3.6.1 — 28 October 2026
+
+**TLADe GEX Dashboard for Sierra Chart** (`bridges/sierra/`, download `TLADe-SierraChart.zip`). An
+ACSIL port of the ATAS edition 3.6.1 with the TradingView Worldlines H1: GEX walls (nearest above and
+below always drawn, flip on two 5-minute closes), Zero Gamma, Max Pain, EM Globex/RTH, Vol Bands,
+Delta Flip, Charm Magnet, GEX profile with the terminal's rule, session AVWAPs (Asia 18:00, EU 03:00,
+US 09:30 ET, previous day's US, all re-anchored at the 18:00 rollover), Worldlines H1, session boxes,
+breakouts M/W/D/H4/H1, previous day/week high/low, confluence zones, level-cross alerts, publication
+status with STALE and catch-up fetch. Bar times are converted from the chart's time zone to New York.
+Network code, key handling and the status corner come from Alex's study.
+
+**TLADe Quantum Field Ladder by Alex** (`bridges/sierra/alex/`, download
+`TLADe-SierraChart-QuantumLadder-Alex.zip`). Alex's community study, published with his permission
+and TLADe's corrections: SPY/QQQ divide by the `R:` ratio (band 9–12 / 35–48, else 10 / 40), magnets
+read from the `B:` profile row, `R:` stripped from the manual string.
+
+**Both: the API key stays off the chart.** Sierra prints the input values next to the study name;
+they included the key, so every screenshot published it. Turned off in both studies.
+
+**Verified:** both build with Sierra's Remote Build, empty compiler response. On ES 5 minutes (a local
+intraday file, bars to 27 October): levels identical to the published string of 28/10 EUROPE; the four
+session AVWAPs equal to the terminal's rule recomputed on the same bars to the cent (US 7750.09, EU
+7746.59, Asia 7744.60, US Prev Day 7730.15); session boxes and breakouts drawn. Not yet seen: a live
+feed, SPX/SPY/NDX/QQQ charts, Worldlines on a day with a displacement.
+
+---
+
 ## NinjaTrader 8, ATAS, MotiveWave — TLADe GEX Levels
 
 ### 3.6.1 — 22 October 2026 (ATAS, ATAS X, TradingView ES and NQ)

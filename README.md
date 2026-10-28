@@ -5,7 +5,7 @@
 for futures and options traders.
 
 This repo holds the integrations that run **outside** the TLADe
-terminal — on TradingView, NinjaTrader 8, ATAS, MotiveWave and
+terminal — on TradingView, NinjaTrader 8, ATAS, MotiveWave, Sierra Chart and
 broker/feed APIs. For indicators that run **inside** the TLADe
 terminal itself (drawn natively on its LWChart canvas), see
 [`../native/`](native/).
@@ -41,6 +41,7 @@ TLADe team.
 | [TradingView Pine](bridges/) (in repo terminal/TV-Indicators/) | **Ready** | Pine v6 indicators for ES/SPX/SPY and NQ/NDX/QQQ — published on TradingView | Pine |
 | [Interactive Brokers](bridges/ib/) | **Ready** | TWS / IB Gateway | Python |
 | [Rithmic](bridges/rithmic/) | **Ready** | R\|Protocol direct (Apex, TopstepTrader, Bulenox, Earn2Trade + 12 other prop firms) | Python |
+| [Sierra Chart](bridges/sierra/) | **Beta** | ACSIL study: the TLADe indicator as on ATAS / NinjaTrader / MotiveWave, auto-fetched with your API key. Network code from Alex's study, below. | C++ |
 | [Rithmic — Bulenox fix](https://github.com/tradelikeadealer/tlade-bridges/releases/tag/rithmic-bulenox-fix) | **Variant** | Same bridge, logs into the market-data and history plants only. For Bulenox and any Rithmic login that answers `rpCode 13 permission denied` on the order plant. | Python |
 
 ### Community-contributed (TLADe-patched)
@@ -57,6 +58,7 @@ credit; the root-level source is the TLADe-patched build. See
 | [NinjaTrader 8](bridges/ninjatrader/) | **Beta** | NT8 chart indicator + local receiver (Rithmic, CQG, Kinetick via NT8) | Kris (C# + Python) |
 | [ATAS](bridges/atas/) | **Ready** | ATAS Platform — Bridge + GEX Dashboard + Quantum Field Ladder (Rithmic / CQG via ATAS data) | Mihai (C# + Python) |
 | [MotiveWave](bridges/motivawe/) | **Ready (cross-OS, MW Java 25+)** | TLADe levels overlay on MotiveWave charts. Single jar for macOS, Windows and Linux. | Herat Acharya (Java) |
+| [Sierra Chart — Quantum Field Ladder](bridges/sierra/alex/) | **Community** | The levels as magnet/wall fields on Sierra Chart. Published with the author's permission and TLADe's corrections (listed in its README); new releases come from the author. | Alex (C++) |
 | [Quantower](bridges/quantower/) | **Community test** | Quantower chart indicator — feed levels + GEX profile, Live fetch from the TLADe endpoint. Published as delivered by the author (no `original/` split). | Dogan Cile (C#) |
 | [CQG](bridges/cqg/) | Wanted | CQG API direct | — |
 

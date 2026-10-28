@@ -127,6 +127,18 @@ jobs:
           # TLADeGexDashboardNT.zip three weeks stale in October. Carried here so
           # the download URL never has to change and never goes stale again.
           cp bridges/motivawe/dist/TLADeGexDashboard.jar "$GITHUB_WORKSPACE/TLADeGexDashboard.jar"
+          # Sierra Chart (28 October 2026): two studies, two downloads, each from a NAMED LIST like
+          # every other asset here. The DLLs are built by Sierra's Remote Build on a licensed
+          # installation and committed, as the ATAS DLLs are: the CI cannot compile ACSIL.
+          mkdir -p pkg-sc/TLADe-SierraChart pkg-sc-alex/TLADe-SierraChart-QuantumLadder-Alex
+          cp bridges/sierra/README.md                 pkg-sc/TLADe-SierraChart/
+          cp bridges/sierra/TLADe_GEX_Dashboard.cpp   pkg-sc/TLADe-SierraChart/
+          cp bridges/sierra/TLADe_GEX_Dashboard_64.dll pkg-sc/TLADe-SierraChart/
+          ( cd pkg-sc && zip -r "$GITHUB_WORKSPACE/TLADe-SierraChart.zip" TLADe-SierraChart )
+          cp bridges/sierra/alex/README.md                        pkg-sc-alex/TLADe-SierraChart-QuantumLadder-Alex/
+          cp bridges/sierra/alex/TLADe_quantum_field_ladder.cpp    pkg-sc-alex/TLADe-SierraChart-QuantumLadder-Alex/
+          cp bridges/sierra/alex/TLADe_quantum_field_ladder_64.dll pkg-sc-alex/TLADe-SierraChart-QuantumLadder-Alex/
+          ( cd pkg-sc-alex && zip -r "$GITHUB_WORKSPACE/TLADe-SierraChart-QuantumLadder-Alex.zip" TLADe-SierraChart-QuantumLadder-Alex )
           # All-in-one bundle (for legacy bookmarks pointing to the previous
           # main.zip pattern, and for users who want every bridge at once).
           mkdir -p pkg-all/TLADe-AllBridges
@@ -189,6 +201,8 @@ jobs:
           | NinjaTrader 8 indicator only (what the terminal links to) | `TLADeGexDashboardNT.zip` |
           | MotiveWave study (one jar: macOS, Windows, Linux) | `TLADeGexDashboard.jar` |
           | Quantower indicator | `GammaExposure-Quantower.zip` |
+          | Sierra Chart study, beta (TLADe GEX Dashboard) | `TLADe-SierraChart.zip` |
+          | Sierra Chart, Quantum Field Ladder by Alex (community) | `TLADe-SierraChart-QuantumLadder-Alex.zip` |
 
           Source: `bridges/<feed>/` in the repo. Pick the feed you use,
           download the matching zip, "Extract All", run `start.bat`.

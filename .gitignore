@@ -29,3 +29,7 @@ mwave_sdk*.jar
 
 # Build output. The jar that ships is the one committed in motivawe/dist/.
 bridges/motivawe/build/
+
+# Sierra Chart: the two zips handed out by hand are built locally next to the sources; the
+# release builds its own from named lists, so these never go into the repository.
+bridges/sierra/*.zip
