@@ -228,5 +228,9 @@ jobs:
             TLADe-AllBridges.zip
             TLADeGexDashboard.jar
             GammaExposure-Quantower.zip
+            # Built above since 28/10/2026 but missing from this list on the first push: the
+            # step built them and published nothing. Every new zip goes in BOTH places.
+            TLADe-SierraChart.zip
+            TLADe-SierraChart-QuantumLadder-Alex.zip
           make_latest: true
           fail_on_unmatched_files: true
