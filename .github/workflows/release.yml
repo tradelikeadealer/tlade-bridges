@@ -212,6 +212,9 @@ jobs:
           HEADER
           cat CHANGELOG.md >> RELEASE_BODY.md
 
+      # Every zip built above must ALSO be named in `files` below: on 28/10/2026 the two Sierra
+      # Chart zips were built and not published because this list did not have them. No comments
+      # inside `files`: it is a block of text, each line is read as a file pattern.
       - name: Publish to "latest" release
         uses: softprops/action-gh-release@v2
         with:
@@ -228,8 +231,6 @@ jobs:
             TLADe-AllBridges.zip
             TLADeGexDashboard.jar
             GammaExposure-Quantower.zip
-            # Built above since 28/10/2026 but missing from this list on the first push: the
-            # step built them and published nothing. Every new zip goes in BOTH places.
             TLADe-SierraChart.zip
             TLADe-SierraChart-QuantumLadder-Alex.zip
           make_latest: true
